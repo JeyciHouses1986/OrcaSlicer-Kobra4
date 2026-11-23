@@ -12,6 +12,7 @@
 #include "GCode/SmallAreaInfillFlowCompensator.hpp"
 #include "GCode/CoolingBuffer.hpp"
 #include "GCode/AdaptivePAProcessor.hpp"
+#include "GCode/AnycubicHeader.hpp"
 #include "CustomGCode.hpp"
 #include "GCode/TimelapsePosPicker.hpp"
 #include "ExPolygon.hpp"
@@ -4315,6 +4316,10 @@ void GCode::_do_export(Print& print, GCodeOutputStream &file, ThumbnailsGenerato
             out << used_filaments[idx] + 1;
         }
         file.writeln(out.str());
+
+        // Orca: colour/material per tool and purge volumes, read by Anycubic ACE printers
+        if (anycubic_ace_header_wanted(print.config()))
+            file.write(anycubic_ace_header(print.config(), used_filaments));
     }
 
     file.write_format("; HEADER_BLOCK_END\n\n");
