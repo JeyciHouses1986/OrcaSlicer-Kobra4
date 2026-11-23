@@ -22,6 +22,7 @@ static constexpr char MOONRAKER_PRINTER_AGENT_ID[] = "moonraker";
 static constexpr char QIDI_PRINTER_AGENT_ID[] = "qidi";
 static constexpr char SNAPMAKER_PRINTER_AGENT_ID[] = "snapmaker";
 static constexpr char CREALITYPRINT_PRINTER_AGENT_ID[] = "crealityprint";
+static constexpr char ANYCUBIC_PRINTER_AGENT_ID[] = "anycubic";
 
 // Factory function type for creating printer agents
 using PrinterAgentFactory =

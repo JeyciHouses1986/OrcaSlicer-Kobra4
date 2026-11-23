@@ -154,6 +154,17 @@ protected:
     // Trim whitespace and convert to uppercase
     static std::string trim_and_upper(const std::string& input);
 
+    // Callbacks into the device manager, queued on the main thread. Agents that replace the transport report
+    // their connection and status through these.
+    void dispatch_local_connect(int state, const std::string& dev_id, const std::string& msg);
+    void dispatch_printer_connected(const std::string& dev_id);
+    void dispatch_message(const std::string& dev_id, const std::string& payload);
+
+    // Uploads the file the print flow prepared; agents whose printers take files elsewhere override it
+    virtual bool upload_gcode(const std::string& local_path, const std::string& filename,
+                              const std::string& base_url, const std::string& api_key,
+                              OnUpdateStatusFn update_fn, WasCancelledFn cancel_fn);
+
     // Map filament type to OrcaFilamentLibrary preset ID for AMS sync compatibility
     static std::string map_filament_type_to_generic_id(const std::string& filament_type);
 
@@ -179,9 +190,6 @@ private:
                           std::function<void(bool)> on_result = {}) const;
 
     void announce_printhost_device();
-    void dispatch_local_connect(int state, const std::string& dev_id, const std::string& msg);
-    void dispatch_printer_connected(const std::string& dev_id);
-    void dispatch_message(const std::string& dev_id, const std::string& payload);
     // Joins a stream stopped from its own callback, so a new stream can start without waiting on it under connect_mutex
     void join_stopped_status_stream();
     void run_status_stream(std::string dev_id, std::string base_url, std::string api_key, StatusStreamTimings timings);
@@ -197,11 +205,6 @@ private:
     int pause_print(const std::string& dev_id);
     int resume_print(const std::string& dev_id);
     int cancel_print(const std::string& dev_id);
-
-    // File upload
-    bool upload_gcode(const std::string& local_path, const std::string& filename,
-                      const std::string& base_url, const std::string& api_key,
-                      OnUpdateStatusFn update_fn, WasCancelledFn cancel_fn);
 
     // Connection thread management
     void perform_connection_async(const std::string& dev_id,
