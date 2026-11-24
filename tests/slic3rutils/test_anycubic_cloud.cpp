@@ -407,3 +407,12 @@ TEST_CASE("Device page G-code lines become printer orders", "[AnycubicCloud]")
           nlohmann::json{{"axis", 2}, {"move_type", 1}, {"distance", 1}});
     CHECK(order_from_gcode("12", "M83 \nG0 E10.0 F300\n").is_null());
 }
+
+TEST_CASE("The light is switched on the printer itself", "[AnycubicCloud]")
+{
+    const auto on = light_order("12", 2, true);
+    CHECK(on["order_id"] == "1233");
+    CHECK_FALSE(on.contains("project_id"));
+    CHECK(on["data"] == nlohmann::json{{"type", 2}, {"status", 1}, {"brightness", 100}});
+    CHECK(light_order("12", 1, false)["data"] == nlohmann::json{{"type", 1}, {"status", 0}, {"brightness", 0}});
+}
