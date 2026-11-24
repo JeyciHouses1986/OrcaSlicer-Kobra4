@@ -150,8 +150,11 @@ int AnycubicPrinterAgent::send_message(std::string dev_id, std::string json_str,
             BOOST_LOG_TRIVIAL(warning) << "AnycubicPrinterAgent: unexpected device page command: " << e.what();
         }
         // The device page says so rather than doing nothing
-        if (order.is_null())
+        if (order.is_null()) {
+            BOOST_LOG_TRIVIAL(info) << "AnycubicPrinterAgent: no cloud order for device page command "
+                                    << json["print"].value("command", std::string());
             return ORCA_NETWORK_ERR_CMD_NOT_SUPPORTED;
+        }
         send_order_async(std::move(order));
     }
     return BAMBU_NETWORK_SUCCESS;
@@ -176,7 +179,15 @@ nlohmann::json AnycubicPrinterAgent::order_for_command(const nlohmann::json& pri
         return AnycubicCloud::ace_drying_order(printer_id, ams_id, print.value("temp", 0), mode == 0 ? 0 : print.value("duration", 0) * 60);
     }
 
-    // Everything else acts on the running job
+    // Temperatures, fans and moves are orders on the printer itself, which work whether or not it prints
+    if (command == "set_bed_temp" && print.contains("temp") && print["temp"].is_number())
+        return AnycubicCloud::temperature_order(printer_id, -1, print["temp"].get<int>());
+    if (command == "set_nozzle_temp" && print.contains("target_temp") && print["target_temp"].is_number())
+        return AnycubicCloud::temperature_order(printer_id, print["target_temp"].get<int>(), -1);
+    if (command == "gcode_line" && print.contains("param") && print["param"].is_string())
+        return AnycubicCloud::order_from_gcode(printer_id, print["param"].get<std::string>());
+
+    // Pause, resume and stop act on the running job
     if (job_id.empty())
         return nullptr;
     using AnycubicCloud::JobOrder;
@@ -186,15 +197,7 @@ nlohmann::json AnycubicPrinterAgent::order_for_command(const nlohmann::json& pri
         return AnycubicCloud::job_order(printer_id, job_id, JobOrder::resume);
     if (command == "stop")
         return AnycubicCloud::job_order(printer_id, job_id, JobOrder::stop);
-
-    nlohmann::json settings;
-    if (command == "set_bed_temp" && print.contains("temp") && print["temp"].is_number())
-        settings = {{"target_hotbed_temp", print["temp"].get<int>()}};
-    else if (command == "set_nozzle_temp" && print.contains("target_temp") && print["target_temp"].is_number())
-        settings = {{"target_nozzle_temp", print["target_temp"].get<int>()}};
-    else if (command == "gcode_line" && print.contains("param") && print["param"].is_string())
-        settings = AnycubicCloud::print_settings_from_gcode(print["param"].get<std::string>());
-    return settings.is_null() ? nlohmann::json() : AnycubicCloud::print_settings_order(printer_id, job_id, settings);
+    return nullptr;
 }
 
 void AnycubicPrinterAgent::send_order_async(nlohmann::json order)

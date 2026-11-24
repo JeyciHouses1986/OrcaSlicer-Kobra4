@@ -119,14 +119,20 @@ nlohmann::json start_print_order(const std::string& printer_id, int64_t file_id,
 enum class JobOrder { pause = 2, resume = 3, stop = 4 };
 nlohmann::json job_order(const std::string& printer_id, const std::string& project_id, JobOrder order);
 
-// Changes settings of the running job, such as target_hotbed_temp, target_nozzle_temp or fan_speed_pct
-nlohmann::json print_settings_order(const std::string& printer_id, const std::string& project_id, const nlohmann::json& settings);
-
 // Starts drying in ACE unit `box_id` at `temp` degrees for `minutes`, or stops it when `minutes` is 0
 nlohmann::json ace_drying_order(const std::string& printer_id, int box_id, int temp, int minutes);
 
-// The print settings a G-code line sent from the device page asks for (M104, M140, M106), or null
-nlohmann::json print_settings_from_gcode(const std::string& gcode);
+// Printer-level orders, which work with or without a running job, as Slicer Next sends them.
+// Sets the nozzle and/or bed target temperature; a negative value leaves that one alone.
+nlohmann::json temperature_order(const std::string& printer_id, int nozzle, int bed);
+// Sets one fan, named as the cloud names it: fan_speed_pct (part cooling) or aux_fan_speed_pct
+nlohmann::json fan_order(const std::string& printer_id, const std::string& fan, int percent);
+// Moves `axis` (1 X, 2 Y, 3 Z, 4 all) by `distance` mm (move_type 0 minus, 1 plus) or homes it (move_type 2)
+nlohmann::json axis_order(const std::string& printer_id, int axis, int move_type, int distance);
+
+// The printer-level order a G-code line from the device page stands for (M104, M140, M106, M107, G28 or a jog),
+// or null when the cloud has none
+nlohmann::json order_from_gcode(const std::string& printer_id, const std::string& gcode);
 
 // The body of /work/operation/sendOrder that opens the printer's camera for one viewing session
 nlohmann::json camera_open_order(const std::string& printer_id);
