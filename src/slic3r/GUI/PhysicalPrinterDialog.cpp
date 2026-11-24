@@ -390,7 +390,7 @@ void PhysicalPrinterDialog::build_printhost_settings(ConfigOptionsGroup* m_optgr
     // The Anycubic Cloud agent takes its token from the API key; the button gets one by logging in to Anycubic
     auto anycubic_login = [=](wxWindow* parent) {
         auto sizer = create_sizer_with_btn(parent, &m_anycubic_login_btn, "", _L("Log in to Anycubic"));
-        m_anycubic_login_btn->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) {
+        m_anycubic_login_btn->Bind(wxEVT_BUTTON, [this, m_optgroup](wxCommandEvent&) {
             AnycubicLoginDialog dlg(this);
             if (dlg.ShowModal() != wxID_OK)
                 return;
