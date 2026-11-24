@@ -11,7 +11,7 @@ This fork lets OrcaSlicer slice for the **Anycubic Kobra 4** with the **ACE 2 Pr
 - **The ACE header** that the Kobra 4 firmware reads from the G-code, so it knows which ACE slot feeds each filament.
 - **Cloud printing**: the print dialog uploads the G-code to your Anycubic account and starts it on the printer, with the filament-to-ACE-slot mapping you choose and an optional timelapse.
 - **Device page**: the printer's state, job progress, layers, remaining time and temperatures; the filament loaded in each ACE slot; and the printer's camera.
-- **Printer control** while a job runs: pause, resume, stop, bed and nozzle temperature and fan speed.
+- **Printer control**: bed and nozzle temperature, fan speed, axis moves and homing at any time; pause, resume and stop while a job runs.
 - **ACE 2 Pro dryer**: humidity is shown for each unit and drying can be started or stopped from the device page.
 
 ## Setting it up
@@ -25,8 +25,7 @@ This fork lets OrcaSlicer slice for the **Anycubic Kobra 4** with the **ACE 2 Pr
 
 - Everything goes through the Anycubic Cloud, so the printer and your computer need internet access. LAN mode is not supported.
 - The cloud is polled every 15 seconds, so the device page lags behind the printer by up to that long.
-- Temperatures and fans can only be changed while a job is running, because the cloud applies them to the job.
-- Axis moves, homing and other manual G-code from the device page are not available through the cloud.
+- Axis moves go in whole millimetres, and extruding or retracting from the device page and other manual G-code are not available through the cloud.
 - Timelapses recorded by the printer cannot be downloaded from OrcaSlicer; take them from the printer's USB drive.
 - The camera needs internet access to load Agora's web player, which the printer streams through.
 

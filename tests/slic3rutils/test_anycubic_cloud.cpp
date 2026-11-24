@@ -353,14 +353,6 @@ TEST_CASE("Pause, resume and stop name the running job", "[AnycubicCloud]")
     CHECK(job_order("12", "345", JobOrder::resume)["order_id"] == 3);
 }
 
-TEST_CASE("Print settings changes go to the running job", "[AnycubicCloud]")
-{
-    const auto order = print_settings_order("12", "345", {{"target_hotbed_temp", 70}});
-    CHECK(order["order_id"] == 6);
-    CHECK(order["project_id"] == 345);
-    CHECK(order["data"]["settings"]["target_hotbed_temp"] == 70);
-}
-
 TEST_CASE("The ACE dryer starts with a temperature and time, and stops with no time", "[AnycubicCloud]")
 {
     const auto start = ace_drying_order("12", 1, 55, 240);
@@ -375,13 +367,43 @@ TEST_CASE("The ACE dryer starts with a temperature and time, and stops with no t
     CHECK(stop["data"]["multi_color_box"][0]["drying_status"]["status"] == 0);
 }
 
-TEST_CASE("Device page G-code lines become print settings", "[AnycubicCloud]")
+TEST_CASE("Temperatures are set on the printer itself, without a print job", "[AnycubicCloud]")
 {
-    CHECK(print_settings_from_gcode("M140 S70\n") == nlohmann::json{{"target_hotbed_temp", 70}});
-    CHECK(print_settings_from_gcode("M104 S250") == nlohmann::json{{"target_nozzle_temp", 250}});
-    CHECK(print_settings_from_gcode("M106 P1 S255") == nlohmann::json{{"fan_speed_pct", 100}});
-    CHECK(print_settings_from_gcode("M106 P2 S0") == nlohmann::json{{"aux_fan_speed_pct", 0}});
-    CHECK(print_settings_from_gcode("M107") == nlohmann::json{{"fan_speed_pct", 0}});
-    CHECK(print_settings_from_gcode("M106 P3 S128").is_null());
-    CHECK(print_settings_from_gcode("G28").is_null());
+    const auto bed = temperature_order("12", -1, 70);
+    CHECK(bed["order_id"] == "1216");
+    CHECK(bed["printer_id"] == 12);
+    CHECK_FALSE(bed.contains("project_id"));
+    CHECK(bed["data"]["type"] == 1);
+    CHECK(bed["data"]["target_hotbed_temp"] == 70);
+    CHECK(bed["data"]["target_nozzle_temp"] == 0);
+    CHECK(temperature_order("12", 250, -1)["data"]["type"] == 0);
+    CHECK(temperature_order("12", 250, 70)["data"]["type"] == 2);
+    CHECK(temperature_order("12", -1, -1).is_null());
+}
+
+TEST_CASE("Device page G-code lines become printer orders", "[AnycubicCloud]")
+{
+    const auto bed = order_from_gcode("12", "M140 S70\n");
+    CHECK(bed["order_id"] == "1216");
+    CHECK(bed["data"]["target_hotbed_temp"] == 70);
+    CHECK(order_from_gcode("12", "M104 S250")["data"]["target_nozzle_temp"] == 250);
+
+    const auto fan = order_from_gcode("12", "M106 P1 S255 \n");
+    CHECK(fan["order_id"] == "1221");
+    CHECK(fan["data"] == nlohmann::json{{"fan_speed_pct", 100}});
+    CHECK(order_from_gcode("12", "M106 P2 S0")["data"] == nlohmann::json{{"aux_fan_speed_pct", 0}});
+    CHECK(order_from_gcode("12", "M107")["data"] == nlohmann::json{{"fan_speed_pct", 0}});
+    CHECK(order_from_gcode("12", "M106 P3 S128").is_null());
+
+    const auto home = order_from_gcode("12", "G28 \n");
+    CHECK(home["order_id"] == "201");
+    CHECK(home["data"] == nlohmann::json{{"axis", 4}, {"move_type", 2}, {"distance", 0}});
+    CHECK(order_from_gcode("12", "G28 X\n")["data"]["axis"] == 1);
+
+    // A jog is wrapped in relative mode; the sign gives the direction
+    CHECK(order_from_gcode("12", "G91 \nG1 Z-10.0 F600\nG90 \n")["data"] ==
+          nlohmann::json{{"axis", 3}, {"move_type", 0}, {"distance", 10}});
+    CHECK(order_from_gcode("12", "G91 \nG1 Y1.0 F3000\nG90 \n")["data"] ==
+          nlohmann::json{{"axis", 2}, {"move_type", 1}, {"distance", 1}});
+    CHECK(order_from_gcode("12", "M83 \nG0 E10.0 F300\n").is_null());
 }

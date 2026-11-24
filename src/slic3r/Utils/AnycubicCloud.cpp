@@ -19,6 +19,7 @@
 #include <cstring>
 #include <istream>
 #include <limits>
+#include <map>
 #include <sstream>
 #include <string>
 #include <utility>
@@ -415,16 +416,6 @@ nlohmann::json job_order(const std::string& printer_id, const std::string& proje
     };
 }
 
-nlohmann::json print_settings_order(const std::string& printer_id, const std::string& project_id, const nlohmann::json& settings)
-{
-    return {
-        {"order_id", 6},
-        {"printer_id", id_value(printer_id)},
-        {"project_id", id_value(project_id)},
-        {"data", {{"settings", settings}}},
-    };
-}
-
 nlohmann::json ace_drying_order(const std::string& printer_id, int box_id, int temp, int minutes)
 {
     const bool on = minutes > 0;
@@ -440,37 +431,79 @@ nlohmann::json ace_drying_order(const std::string& printer_id, int box_id, int t
     };
 }
 
-nlohmann::json print_settings_from_gcode(const std::string& gcode)
+namespace {
+// An order on the printer itself. Slicer Next sends these with the order id as text and without a project id; the
+// cloud acknowledges other forms but the printer ignores them. The ids and payloads follow anycubic-cloud-api (GPL-3.0+).
+nlohmann::json printer_order(const std::string& printer_id, int order_id, nlohmann::json data)
 {
-    // One command per line, such as "M140 S70" or "M106 P2 S128"
-    std::istringstream in(gcode);
-    std::string        command;
-    in >> command;
-    double s = -1;
-    int    p = 1;
-    for (std::string word; in >> word;) {
-        if (word[0] == ';')
-            break;
-        if (word.size() > 1 && (word[0] == 'S' || word[0] == 's'))
-            s = std::strtod(word.c_str() + 1, nullptr);
-        else if (word.size() > 1 && (word[0] == 'P' || word[0] == 'p'))
-            p = std::atoi(word.c_str() + 1);
-    }
-    if (command == "M107")
-        s = 0;
-    if (s < 0)
+    return {{"order_id", std::to_string(order_id)}, {"printer_id", id_value(printer_id)}, {"data", std::move(data)}};
+}
+} // namespace
+
+nlohmann::json temperature_order(const std::string& printer_id, int nozzle, int bed)
+{
+    if (nozzle < 0 && bed < 0)
         return nullptr;
-    if (command == "M104" || command == "M109")
-        return {{"target_nozzle_temp", int(std::lround(s))}};
-    if (command == "M140" || command == "M190")
-        return {{"target_hotbed_temp", int(std::lround(s))}};
-    if (command == "M106" || command == "M107") {
-        const int percent = int(std::lround(std::clamp(s, 0.0, 255.0) * 100 / 255));
-        // P1 is the part cooling fan and P2 the auxiliary fan; the device page names no other here
-        if (p == 1 || p == 0)
-            return {{"fan_speed_pct", percent}};
-        if (p == 2)
-            return {{"aux_fan_speed_pct", percent}};
+    // type says which target the printer acts on: 0 nozzle, 1 bed, 2 both; the other is sent as 0
+    const int type = bed < 0 ? 0 : nozzle < 0 ? 1 : 2;
+    return printer_order(printer_id, 1216,
+                         {{"type", type}, {"target_hotbed_temp", std::max(bed, 0)}, {"target_nozzle_temp", std::max(nozzle, 0)}});
+}
+
+nlohmann::json fan_order(const std::string& printer_id, const std::string& fan, int percent)
+{
+    return printer_order(printer_id, 1221, {{fan, std::clamp(percent, 0, 100)}});
+}
+
+nlohmann::json axis_order(const std::string& printer_id, int axis, int move_type, int distance)
+{
+    return printer_order(printer_id, 201, {{"axis", axis}, {"move_type", move_type}, {"distance", distance}});
+}
+
+nlohmann::json order_from_gcode(const std::string& printer_id, const std::string& gcode)
+{
+    // The device page sends one command, or a jog wrapped in G91/G90, such as "G91 \nG1 X10.0 F3000\nG90 \n"
+    std::istringstream lines(gcode);
+    for (std::string line; std::getline(lines, line);) {
+        std::istringstream in(line);
+        std::string        command;
+        in >> command;
+        std::map<char, double> words;
+        for (std::string word; in >> word;) {
+            if (word[0] == ';')
+                break;
+            if (word.size() > 1)
+                words[char(std::toupper((unsigned char) word[0]))] = std::strtod(word.c_str() + 1, nullptr);
+        }
+        const auto value = [&words](char key, double fallback) { return words.count(key) ? words[key] : fallback; };
+        if (command == "M104" || command == "M109")
+            return temperature_order(printer_id, int(std::lround(value('S', -1))), -1);
+        if (command == "M140" || command == "M190")
+            return temperature_order(printer_id, -1, int(std::lround(value('S', -1))));
+        if (command == "M106" || command == "M107") {
+            const int    fan     = int(value('P', 1));
+            const double s       = command == "M107" ? 0 : value('S', -1);
+            const char*  fan_key = fan == 0 || fan == 1 ? "fan_speed_pct" : fan == 2 ? "aux_fan_speed_pct" : nullptr;
+            if (fan_key == nullptr || s < 0)
+                return nullptr;
+            return fan_order(printer_id, fan_key, int(std::lround(std::clamp(s, 0.0, 255.0) * 100 / 255)));
+        }
+        if (command == "G28") {
+            // "G28" homes everything; "G28 X" names the axes (the device page names one at most)
+            for (const auto& [axis, id] : {std::pair{'X', 1}, std::pair{'Y', 2}, std::pair{'Z', 3}})
+                if (line.find(axis) != std::string::npos)
+                    return axis_order(printer_id, id, 2, 0);
+            return axis_order(printer_id, 4, 2, 0);
+        }
+        if (command == "G0" || command == "G1") {
+            // A relative jog; the cloud moves whole millimetres and has no extruder move
+            for (const auto& [axis, id] : {std::pair{'X', 1}, std::pair{'Y', 2}, std::pair{'Z', 3}}) {
+                const int distance = int(std::lround(value(axis, 0)));
+                if (distance != 0)
+                    return axis_order(printer_id, id, distance > 0 ? 1 : 0, std::abs(distance));
+            }
+            return nullptr;
+        }
     }
     return nullptr;
 }
