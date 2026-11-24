@@ -120,6 +120,9 @@ The [wiki](https://www.orcaslicer.com/wiki) aims to provide a detailed explanati
 
 # Download
 
+> [!WARNING]
+> The downloads and install steps below are those of the original OrcaSlicer, which has no Kobra 4 cloud printing or ACE 2 Pro control. To get this fork, see [Downloads](#downloads) at the top of this page.
+
 ## Stable Release
 
 📥 **[Download the Latest Stable Release](https://github.com/OrcaSlicer/OrcaSlicer/releases/latest)**  
