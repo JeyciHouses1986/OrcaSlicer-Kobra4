@@ -7092,6 +7092,23 @@ static wxString _get_tips(MachineObject* obj_)
     return tips;
 }
 
+// The cover image of the vendor profile model whose id is `model_id`, or empty when there is none
+static std::string printer_model_cover(const std::string& model_id)
+{
+    const PresetBundle* bundle = wxGetApp().preset_bundle;
+    if (!bundle || model_id.empty())
+        return {};
+    for (const auto& vendor : bundle->vendors)
+        for (const auto& model : vendor.second.models)
+            if (model.id == model_id) {
+                const boost::filesystem::path cover = boost::filesystem::path(resources_dir()) / "profiles" / vendor.second.id /
+                                                      (model.id + "_cover.png");
+                if (boost::filesystem::exists(cover))
+                    return cover.make_preferred().string();
+            }
+    return {};
+}
+
 void PrinterInfoBox::SetPrinters(const std::vector<MachineObject*>& sorted_printers)
 {
     m_comboBox_printer->Clear();
@@ -7111,8 +7128,11 @@ void PrinterInfoBox::SetPrinters(const std::vector<MachineObject*>& sorted_print
         }
         catch (const std::exception&)
         {
-            drop_item.icon = create_scaled_bitmap("printer_preview_BL-P001", this, 32);
-            drop_item.icon_textctrl = create_scaled_bitmap("printer_preview_BL-P001", this, 52);
+            // Orca: a printer of another vendor shows its model's cover, as the sidebar does
+            const std::string cover = printer_model_cover(obj->printer_type);
+            const std::string image = cover.empty() ? "printer_preview_BL-P001" : cover;
+            drop_item.icon = create_scaled_bitmap(image, this, 32);
+            drop_item.icon_textctrl = create_scaled_bitmap(image, this, 52);
         }
 
         drop_item.tip = obj->get_printer_type_display_str();
