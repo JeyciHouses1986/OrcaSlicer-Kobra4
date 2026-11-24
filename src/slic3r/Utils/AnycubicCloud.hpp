@@ -47,6 +47,18 @@ struct AceSlot
     std::array<int, 3> rgb{0, 0, 0};
 };
 
+// An ACE unit's state in /v2/printer/info: its dryer and humidity
+struct AceUnit
+{
+    int id              = 0;
+    int temp            = -1; // degrees inside the unit, -1 when not reported
+    int humidity        = -1; // percent, -1 when not reported
+    int drying          = 0;  // drying_status.status: 1 while drying
+    int dry_target_temp = 0;  // degrees
+    int dry_duration    = 0;  // minutes
+    int dry_remain      = 0;  // minutes
+};
+
 // One entry of the start-print order's ams_box_mapping: the project filament `paint_index` is fed from ACE slot `ams_index`.
 struct SlotMapping
 {
@@ -63,6 +75,7 @@ struct Job
     // Values of print_status
     enum Status { printing = 1, complete = 2, cancelled = 3, downloading = 4, checking = 5, preheating = 6 };
 
+    std::string id; // the cloud's project id, which pause, resume, stop and print settings name
     std::string name;
     int         print_status   = 0;
     bool        paused         = false;
@@ -87,6 +100,8 @@ std::vector<Printer> parse_printers(const nlohmann::json& data);
 // The loaded and empty slots of every ACE unit in a /v2/printer/info answer.
 std::vector<AceSlot> parse_ace_slots(const nlohmann::json& printer_info);
 
+std::vector<AceUnit> parse_ace_units(const nlohmann::json& printer_info);
+
 // "#RRGGBB", "RRGGBB" or "RRGGBBAA" to RGB; anything else is black.
 std::array<int, 3> rgb_from_hex(const std::string& colour);
 std::string        hex_from_rgb(const std::array<int, 3>& rgb);
@@ -99,6 +114,19 @@ std::vector<SlotMapping> slot_mapping_from_ams_mapping_info(const std::string& a
 // timelapse with the printer's camera when `timelapse` is set.
 nlohmann::json start_print_order(const std::string& printer_id, int64_t file_id, const std::vector<SlotMapping>& mapping,
                                  bool timelapse = false);
+
+// Orders on the running job `project_id`: pause (2), resume (3) and stop (4)
+enum class JobOrder { pause = 2, resume = 3, stop = 4 };
+nlohmann::json job_order(const std::string& printer_id, const std::string& project_id, JobOrder order);
+
+// Changes settings of the running job, such as target_hotbed_temp, target_nozzle_temp or fan_speed_pct
+nlohmann::json print_settings_order(const std::string& printer_id, const std::string& project_id, const nlohmann::json& settings);
+
+// Starts drying in ACE unit `box_id` at `temp` degrees for `minutes`, or stops it when `minutes` is 0
+nlohmann::json ace_drying_order(const std::string& printer_id, int box_id, int temp, int minutes);
+
+// The print settings a G-code line sent from the device page asks for (M104, M140, M106), or null
+nlohmann::json print_settings_from_gcode(const std::string& gcode);
 
 // The body of /work/operation/sendOrder that opens the printer's camera for one viewing session
 nlohmann::json camera_open_order(const std::string& printer_id);

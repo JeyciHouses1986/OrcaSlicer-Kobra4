@@ -124,6 +124,10 @@ protected:
     nlohmann::json ams_status_json(int ams_count, int max_lane_index, const std::vector<AmsTrayData>& trays) const;
     // Name shown for a filament unit, or empty for the AMS Lite name
     virtual std::string ams_unit_name(int /*ams_id*/) const { return {}; }
+    // Adds what a filament unit reports beyond its trays, such as its type, humidity or dryer, to its "ams" entry
+    virtual void decorate_ams_unit(int /*ams_id*/, nlohmann::json& /*unit*/) const {}
+    // Runs `fn` on the GUI thread, or at once when no GUI is attached
+    void run_on_main(std::function<void()> fn);
 
     // Methods that derived classes may need to override or access
     virtual bool init_device_info(const std::string& dev_id, const std::string& dev_ip, const std::string& username, const std::string& password, bool use_ssl, const std::string& port);

@@ -321,3 +321,67 @@ TEST_CASE("The statistics block is built from Orca's stats", "[AnycubicCloud]")
     std::istringstream no_stats("G1 X1 E1\n");
     CHECK(statistics_block(no_stats).empty());
 }
+
+TEST_CASE("The dryer and humidity of each ACE unit are read from the printer info", "[AnycubicCloud]")
+{
+    const auto info  = nlohmann::json::parse(R"({"multi_color_box": [
+        {"id": 0, "temp": 41, "humidity": "32", "drying_status": {"status": 1, "target_temp": 55, "duration": 240, "remain_time": 180}},
+        {"id": 1, "drying_status": {"status": 0, "remain_time": null}}
+    ]})");
+    const auto units = parse_ace_units(info);
+    REQUIRE(units.size() == 2);
+    CHECK(units[0].temp == 41);
+    CHECK(units[0].humidity == 32);
+    CHECK(units[0].drying == 1);
+    CHECK(units[0].dry_target_temp == 55);
+    CHECK(units[0].dry_duration == 240);
+    CHECK(units[0].dry_remain == 180);
+    CHECK(units[1].id == 1);
+    CHECK(units[1].temp == -1);
+    CHECK(units[1].humidity == -1);
+    CHECK(units[1].drying == 0);
+    CHECK(parse_ace_units(nlohmann::json::parse(R"({"multi_color_box": null})")).empty());
+}
+
+TEST_CASE("Pause, resume and stop name the running job", "[AnycubicCloud]")
+{
+    const auto order = job_order("12", "345", JobOrder::stop);
+    CHECK(order["order_id"] == 4);
+    CHECK(order["printer_id"] == 12);
+    CHECK(order["project_id"] == 345);
+    CHECK(job_order("12", "345", JobOrder::pause)["order_id"] == 2);
+    CHECK(job_order("12", "345", JobOrder::resume)["order_id"] == 3);
+}
+
+TEST_CASE("Print settings changes go to the running job", "[AnycubicCloud]")
+{
+    const auto order = print_settings_order("12", "345", {{"target_hotbed_temp", 70}});
+    CHECK(order["order_id"] == 6);
+    CHECK(order["project_id"] == 345);
+    CHECK(order["data"]["settings"]["target_hotbed_temp"] == 70);
+}
+
+TEST_CASE("The ACE dryer starts with a temperature and time, and stops with no time", "[AnycubicCloud]")
+{
+    const auto start = ace_drying_order("12", 1, 55, 240);
+    CHECK(start["order_id"] == 1207);
+    const auto& box = start["data"]["multi_color_box"][0];
+    CHECK(box["id"] == 1);
+    CHECK(box["drying_status"]["status"] == 1);
+    CHECK(box["drying_status"]["target_temp"] == 55);
+    CHECK(box["drying_status"]["duration"] == 240);
+
+    const auto stop = ace_drying_order("12", 1, 55, 0);
+    CHECK(stop["data"]["multi_color_box"][0]["drying_status"]["status"] == 0);
+}
+
+TEST_CASE("Device page G-code lines become print settings", "[AnycubicCloud]")
+{
+    CHECK(print_settings_from_gcode("M140 S70\n") == nlohmann::json{{"target_hotbed_temp", 70}});
+    CHECK(print_settings_from_gcode("M104 S250") == nlohmann::json{{"target_nozzle_temp", 250}});
+    CHECK(print_settings_from_gcode("M106 P1 S255") == nlohmann::json{{"fan_speed_pct", 100}});
+    CHECK(print_settings_from_gcode("M106 P2 S0") == nlohmann::json{{"aux_fan_speed_pct", 0}});
+    CHECK(print_settings_from_gcode("M107") == nlohmann::json{{"fan_speed_pct", 0}});
+    CHECK(print_settings_from_gcode("M106 P3 S128").is_null());
+    CHECK(print_settings_from_gcode("G28").is_null());
+}

@@ -8,7 +8,9 @@
 #include "libslic3r/PresetBundle.hpp"
 #include "libslic3r/format.hpp"
 #include "libslic3r/Utils.hpp"
+#include "slic3r/GUI/DeviceCore/DevManager.h"
 #include "slic3r/GUI/DeviceCore/DevStorage.h"
+#include "slic3r/GUI/DeviceManager.hpp"
 #include "slic3r/GUI/GUI.hpp"
 #include "slic3r/GUI/GUI_App.hpp"
 #include "slic3r/GUI/I18N.hpp"
@@ -23,6 +25,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdint>
+#include <cstdio>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -139,10 +142,98 @@ int AnycubicPrinterAgent::send_message(std::string dev_id, std::string json_str,
     // Version and access code are answered from what the agent already holds
     if (json.is_object() && (json.contains("info") || json.contains("system")))
         return MoonrakerPrinterAgent::send_message(dev_id, json_str, qos, flag);
-    // Printer control through the cloud is not implemented yet; the device page says so rather than doing nothing
-    if (json.is_object() && json.contains("print"))
-        return ORCA_NETWORK_ERR_CMD_NOT_SUPPORTED;
+    if (json.is_object() && json.contains("print") && json["print"].is_object()) {
+        nlohmann::json order;
+        try {
+            order = order_for_command(json["print"]);
+        } catch (const nlohmann::json::exception& e) {
+            BOOST_LOG_TRIVIAL(warning) << "AnycubicPrinterAgent: unexpected device page command: " << e.what();
+        }
+        // The device page says so rather than doing nothing
+        if (order.is_null())
+            return ORCA_NETWORK_ERR_CMD_NOT_SUPPORTED;
+        send_order_async(std::move(order));
+    }
     return BAMBU_NETWORK_SUCCESS;
+}
+
+nlohmann::json AnycubicPrinterAgent::order_for_command(const nlohmann::json& print) const
+{
+    std::string printer_id, job_id;
+    {
+        std::lock_guard<std::mutex> lock(m_cloud_mutex);
+        printer_id = m_printer_id;
+        job_id     = m_job_id;
+    }
+    const std::string command = print.value("command", "");
+    if (printer_id.empty())
+        return nullptr;
+
+    // The dryer works whether or not the printer prints. Orca gives hours; the cloud takes minutes.
+    if (command == "ams_filament_drying") {
+        const int ams_id = print.value("ams_id", 0);
+        const int mode   = print.value("mode", 0);
+        return AnycubicCloud::ace_drying_order(printer_id, ams_id, print.value("temp", 0), mode == 0 ? 0 : print.value("duration", 0) * 60);
+    }
+
+    // Everything else acts on the running job
+    if (job_id.empty())
+        return nullptr;
+    using AnycubicCloud::JobOrder;
+    if (command == "pause")
+        return AnycubicCloud::job_order(printer_id, job_id, JobOrder::pause);
+    if (command == "resume")
+        return AnycubicCloud::job_order(printer_id, job_id, JobOrder::resume);
+    if (command == "stop")
+        return AnycubicCloud::job_order(printer_id, job_id, JobOrder::stop);
+
+    nlohmann::json settings;
+    if (command == "set_bed_temp" && print.contains("temp") && print["temp"].is_number())
+        settings = {{"target_hotbed_temp", print["temp"].get<int>()}};
+    else if (command == "set_nozzle_temp" && print.contains("target_temp") && print["target_temp"].is_number())
+        settings = {{"target_nozzle_temp", print["target_temp"].get<int>()}};
+    else if (command == "gcode_line" && print.contains("param") && print["param"].is_string())
+        settings = AnycubicCloud::print_settings_from_gcode(print["param"].get<std::string>());
+    return settings.is_null() ? nlohmann::json() : AnycubicCloud::print_settings_order(printer_id, job_id, settings);
+}
+
+void AnycubicPrinterAgent::send_order_async(nlohmann::json order)
+{
+    std::shared_ptr<AnycubicCloud::Client> client;
+    {
+        std::lock_guard<std::mutex> lock(m_cloud_mutex);
+        client = m_client;
+    }
+    if (!client)
+        return;
+    // The device page's command must not wait for the cloud; the next poll shows the result
+    std::thread([client, order = std::move(order)]() {
+        std::string error;
+        if (!client->send_order(order, error))
+            BOOST_LOG_TRIVIAL(warning) << "AnycubicPrinterAgent: order " << order.value("order_id", 0) << " was refused: " << error;
+    }).detach();
+}
+
+void AnycubicPrinterAgent::decorate_ams_unit(int ams_id, nlohmann::json& unit) const
+{
+    AnycubicCloud::AceUnit ace;
+    {
+        std::lock_guard<std::mutex> lock(m_cloud_mutex);
+        if (ams_id < 0 || ams_id >= int(m_ace_units.size()))
+            return;
+        ace = m_ace_units[ams_id];
+    }
+    // "info" holds the unit type in bits 0-3 (3, a unit with a dryer) and the dryer state in bits 4-7 (2 while drying)
+    constexpr int with_dryer = 3, off = 0, drying = 2;
+    char          info[8];
+    std::snprintf(info, sizeof(info), "%X", with_dryer | ((ace.drying == 1 ? drying : off) << 4));
+    unit["info"] = info;
+    if (ace.humidity >= 0)
+        unit["humidity_raw"] = std::to_string(ace.humidity);
+    if (ace.temp >= 0)
+        unit["temp"] = std::to_string(ace.temp);
+    unit["dry_time"]    = ace.drying == 1 ? ace.dry_remain : 0;
+    unit["dry_setting"] = {{"dry_temperature", ace.dry_target_temp}, {"dry_duration", ace.dry_duration / 60}};
 }
 
 int AnycubicPrinterAgent::send_message_to_printer(std::string dev_id, std::string json_str, int qos, int flag)
@@ -232,6 +323,7 @@ AnycubicPrinterAgent::CloudState AnycubicPrinterAgent::read_cloud_state(Anycubic
     if (client.printer_info(printer_id, data, error)) {
         AnycubicCloud::parse_temperatures(data, state.nozzle_temp, state.bed_temp);
         state.ace_slots = AnycubicCloud::parse_ace_slots(data);
+        state.ace_units = AnycubicCloud::parse_ace_units(data);
     }
     if (client.list_projects(data, error))
         state.job = AnycubicCloud::latest_job(data, printer_id);
@@ -297,7 +389,21 @@ void AnycubicPrinterAgent::run_connection(std::string dev_id, std::string token,
         device_info.dev_name = printer.name;
     }
     BOOST_LOG_TRIVIAL(info) << "AnycubicPrinterAgent: connected to " << printer.model << " through Anycubic Cloud";
-    dispatch_message(dev_id, device_status(printer, read_cloud_state(*client, printer.id)).dump());
+    // The device page offers the ACE's dryer only to a printer that says it can dry remotely
+    run_on_main([dev_id]() {
+        if (auto* manager = GUI::wxGetApp().getDeviceManager())
+            if (MachineObject* obj = manager->get_my_machine(dev_id))
+                obj->is_support_remote_dry = true;
+    });
+    // What the device page's commands act on
+    const auto remember = [this](const AnycubicCloud::Printer& current, const CloudState& state) {
+        std::lock_guard<std::mutex> lock(m_cloud_mutex);
+        m_job_id    = current.busy() && state.job ? state.job->id : std::string();
+        m_ace_units = state.ace_units;
+    };
+    CloudState state = read_cloud_state(*client, printer.id);
+    remember(printer, state);
+    dispatch_message(dev_id, device_status(printer, state).dump());
     dispatch_local_connect(ConnectStatusOk, dev_id, "0");
     dispatch_printer_connected(dev_id);
 
@@ -315,7 +421,8 @@ void AnycubicPrinterAgent::run_connection(std::string dev_id, std::string token,
         const AnycubicCloud::Printer* current = AnycubicCloud::choose_printer(printers, printer.id);
         if (current == nullptr)
             continue;
-        const CloudState state = read_cloud_state(*client, current->id);
+        state = read_cloud_state(*client, current->id);
+        remember(*current, state);
         if (!stale())
             dispatch_message(dev_id, device_status(*current, state).dump());
     }

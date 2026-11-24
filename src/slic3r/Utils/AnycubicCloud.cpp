@@ -204,6 +204,35 @@ std::vector<AceSlot> parse_ace_slots(const nlohmann::json& printer_info)
     return slots;
 }
 
+std::vector<AceUnit> parse_ace_units(const nlohmann::json& printer_info)
+{
+    std::vector<AceUnit> units;
+    if (!printer_info.is_object())
+        return units;
+    auto boxes_it = printer_info.find("multi_color_box");
+    if (boxes_it == printer_info.end() || boxes_it->is_null())
+        return units;
+    const nlohmann::json boxes = boxes_it->is_array() ? *boxes_it : nlohmann::json::array({*boxes_it});
+    for (size_t i = 0; i < boxes.size(); ++i) {
+        const auto& box = boxes[i];
+        if (!box.is_object())
+            continue;
+        AceUnit unit;
+        unit.id       = json_int(box, "id", int(i));
+        unit.temp     = json_int(box, "temp", -1);
+        unit.humidity = json_int(box, "humidity", -1);
+        auto drying   = box.find("drying_status");
+        if (drying != box.end() && drying->is_object()) {
+            unit.drying          = json_int(*drying, "status");
+            unit.dry_target_temp = json_int(*drying, "target_temp");
+            unit.dry_duration    = json_int(*drying, "duration");
+            unit.dry_remain      = json_int(*drying, "remain_time");
+        }
+        units.push_back(unit);
+    }
+    return units;
+}
+
 std::array<int, 3> rgb_from_hex(const std::string& colour)
 {
     std::array<int, 3> rgb{0, 0, 0};
@@ -374,6 +403,78 @@ std::string statistics_block(std::istream& gcode)
     return out.str();
 }
 
+nlohmann::json job_order(const std::string& printer_id, const std::string& project_id, JobOrder order)
+{
+    return {
+        {"order_id", int(order)},
+        {"printer_id", id_value(printer_id)},
+        {"project_id", id_value(project_id)},
+        {"data", nullptr},
+        {"ams_info", nullptr},
+        {"settings", nullptr},
+    };
+}
+
+nlohmann::json print_settings_order(const std::string& printer_id, const std::string& project_id, const nlohmann::json& settings)
+{
+    return {
+        {"order_id", 6},
+        {"printer_id", id_value(printer_id)},
+        {"project_id", id_value(project_id)},
+        {"data", {{"settings", settings}}},
+    };
+}
+
+nlohmann::json ace_drying_order(const std::string& printer_id, int box_id, int temp, int minutes)
+{
+    const bool on = minutes > 0;
+    return {
+        {"order_id", 1207},
+        {"printer_id", id_value(printer_id)},
+        {"project_id", 0},
+        {"data",
+         {{"multi_color_box",
+           {{{"id", box_id},
+             {"drying_status",
+              {{"duration", on ? minutes : 0}, {"remain_time", nullptr}, {"status", on ? 1 : 0}, {"target_temp", on ? temp : 0}}}}}}}},
+    };
+}
+
+nlohmann::json print_settings_from_gcode(const std::string& gcode)
+{
+    // One command per line, such as "M140 S70" or "M106 P2 S128"
+    std::istringstream in(gcode);
+    std::string        command;
+    in >> command;
+    double s = -1;
+    int    p = 1;
+    for (std::string word; in >> word;) {
+        if (word[0] == ';')
+            break;
+        if (word.size() > 1 && (word[0] == 'S' || word[0] == 's'))
+            s = std::strtod(word.c_str() + 1, nullptr);
+        else if (word.size() > 1 && (word[0] == 'P' || word[0] == 'p'))
+            p = std::atoi(word.c_str() + 1);
+    }
+    if (command == "M107")
+        s = 0;
+    if (s < 0)
+        return nullptr;
+    if (command == "M104" || command == "M109")
+        return {{"target_nozzle_temp", int(std::lround(s))}};
+    if (command == "M140" || command == "M190")
+        return {{"target_hotbed_temp", int(std::lround(s))}};
+    if (command == "M106" || command == "M107") {
+        const int percent = int(std::lround(std::clamp(s, 0.0, 255.0) * 100 / 255));
+        // P1 is the part cooling fan and P2 the auxiliary fan; the device page names no other here
+        if (p == 1 || p == 0)
+            return {{"fan_speed_pct", percent}};
+        if (p == 2)
+            return {{"aux_fan_speed_pct", percent}};
+    }
+    return nullptr;
+}
+
 nlohmann::json camera_open_order(const std::string& printer_id)
 {
     return {
@@ -419,6 +520,7 @@ std::optional<Job> latest_job(const nlohmann::json& projects, const std::string&
         if (!project.is_object() || json_string(project, "printer_id") != printer_id)
             continue;
         Job job;
+        job.id             = json_string(project, "id");
         job.name           = json_string(project, "gcode_name");
         job.print_status   = json_int(project, "print_status");
         job.paused         = json_int(project, "pause") != 0;

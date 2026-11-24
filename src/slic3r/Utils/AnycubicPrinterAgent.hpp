@@ -56,6 +56,7 @@ public:
         int                               bed_temp    = -1;
         std::optional<AnycubicCloud::Job> job;
         std::vector<AnycubicCloud::AceSlot> ace_slots;
+        std::vector<AnycubicCloud::AceUnit> ace_units;
     };
 
     // The status message the device page reads, built from the cloud's view of the printer
@@ -70,6 +71,8 @@ protected:
                       WasCancelledFn     cancel_fn) override;
     bool print_uploaded_file(const PrintParams& params, const std::string& filename) override;
     std::string ams_unit_name(int ams_id) const override { return "ACE " + std::to_string(ams_id + 1); }
+    // The ACE 2 Pro shows as a unit with a dryer and a humidity sensor, so the device page offers drying
+    void decorate_ams_unit(int ams_id, nlohmann::json& unit) const override;
 
 private:
     // Finds the printer of the account the settings name; empty on failure, with `error` set
@@ -82,11 +85,16 @@ private:
     void        run_connection(std::string dev_id, std::string token, uint64_t generation);
     void        report_token_refused(const std::string& dev_id, const std::string& error, const std::function<bool()>& stale);
     void        stop_connection_thread();
+    // The cloud order a device page command stands for, or null when the cloud has none
+    nlohmann::json order_for_command(const nlohmann::json& print) const;
+    void           send_order_async(nlohmann::json order);
 
     mutable std::mutex                      m_cloud_mutex; // Guards everything below
     std::shared_ptr<AnycubicCloud::Client>  m_client;
     std::string                             m_printer_id;
     int64_t                                 m_uploaded_file_id = -1;
+    std::string                             m_job_id; // The running job's, empty when the printer is idle
+    std::vector<AnycubicCloud::AceUnit>     m_ace_units;
     WasCancelledFn                          m_upload_cancelled; // The print job's, kept for the print order
 
     std::atomic<uint64_t> m_generation{0};

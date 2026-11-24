@@ -685,6 +685,7 @@ nlohmann::json MoonrakerPrinterAgent::ams_status_json(int ams_count, int max_lan
             tray_array.push_back(tray_json);
         }
         ams_unit["tray"] = tray_array;
+        decorate_ams_unit(ams_id, ams_unit);
         ams_array.push_back(ams_unit);
     }
 
@@ -1649,6 +1650,19 @@ void MoonrakerPrinterAgent::dispatch_local_connect(int state, const std::string&
     } else {
         dispatch();
     }
+}
+
+void MoonrakerPrinterAgent::run_on_main(std::function<void()> fn)
+{
+    QueueOnMainFn queue_fn;
+    {
+        std::lock_guard<std::recursive_mutex> lock(state_mutex);
+        queue_fn = queue_on_main_fn;
+    }
+    if (queue_fn)
+        queue_fn(std::move(fn));
+    else
+        fn();
 }
 
 void MoonrakerPrinterAgent::dispatch_printer_connected(const std::string& dev_id)

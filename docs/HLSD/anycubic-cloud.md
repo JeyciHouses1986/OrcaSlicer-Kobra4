@@ -50,7 +50,7 @@ flow that extracts the plate's G-code and reports progress. It replaces the tran
   address carrying them. The page loads the MIT-licensed SDK from a CDN, and gets the few words it shows from the
   agent, already translated.
 
-Printer control from the device page (pause, temperatures, moves) is refused as unsupported rather than ignored.
+Device page commands become cloud orders on `/work/operation/sendOrder`: pause (2), resume (3) and stop (4) name the running job's project id; bed and nozzle temperatures and the fans go through the print settings order (6), so they only apply while a job runs. The ACE's dryer (1207) works at any time: each ACE unit is reported to the device page as a filament unit with a dryer and a humidity sensor, which makes Orca offer its drying controls, and the agent turns their command into the drying order (Orca counts hours, the cloud minutes). Commands the cloud has no order for, such as moves and homing, are refused as unsupported rather than ignored.
 
 `AnycubicCloud` holds the HTTP client and the pure helpers (request signature, answer parsing, slot mapping, order
 body), so these are tested without a network. The API is undocumented; the endpoints, the request signature and
