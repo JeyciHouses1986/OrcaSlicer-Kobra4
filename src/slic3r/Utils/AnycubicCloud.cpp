@@ -290,7 +290,13 @@ const Printer* choose_printer(const std::vector<Printer>& printers, const std::s
     return printers.size() == 1 ? &printers.front() : nullptr;
 }
 
-Client::Client(std::string token) : m_pasted_token(std::move(token)) {}
+Client::Client(std::string token)
+{
+    // A token copied from the browser may come with quotes, spaces or line breaks around or inside it
+    for (const char c : token)
+        if (!std::isspace(static_cast<unsigned char>(c)) && c != '"')
+            m_pasted_token.push_back(c);
+}
 
 bool Client::request(const std::string& method, const std::string& endpoint, const nlohmann::json& body, nlohmann::json& data, std::string& error)
 {
