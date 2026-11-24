@@ -150,8 +150,11 @@ int AnycubicPrinterAgent::send_message(std::string dev_id, std::string json_str,
             BOOST_LOG_TRIVIAL(warning) << "AnycubicPrinterAgent: unexpected device page command: " << e.what();
         }
         // The device page says so rather than doing nothing
-        if (order.is_null())
+        if (order.is_null()) {
+            BOOST_LOG_TRIVIAL(info) << "AnycubicPrinterAgent: no cloud order for device page command "
+                                    << json["print"].value("command", std::string()) << "; print settings need a running job";
             return ORCA_NETWORK_ERR_CMD_NOT_SUPPORTED;
+        }
         send_order_async(std::move(order));
     }
     return BAMBU_NETWORK_SUCCESS;
