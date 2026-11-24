@@ -1,6 +1,8 @@
 #include "PhysicalPrinterDialog.hpp"
+#include "AnycubicLoginDialog.hpp"
 #include "PresetComboBoxes.hpp"
 #include "PrinterCloudAuthDialog.hpp"
+#include "slic3r/Utils/NetworkAgentFactory.hpp"
 #include "SavePresetDialog.hpp"
 
 #include <boost/algorithm/string/trim.hpp>
@@ -385,9 +387,29 @@ void PhysicalPrinterDialog::build_printhost_settings(ConfigOptionsGroup* m_optgr
 
     m_optgroup->append_single_option_line("printhost_authorization_type");
 
+    // The Anycubic Cloud agent takes its token from the API key; the button gets one by logging in to Anycubic
+    auto anycubic_login = [=](wxWindow* parent) {
+        auto sizer = create_sizer_with_btn(parent, &m_anycubic_login_btn, "", _L("Log in to Anycubic"));
+        m_anycubic_login_btn->Bind(wxEVT_BUTTON, [this](wxCommandEvent&) {
+            AnycubicLoginDialog dlg(this);
+            if (dlg.ShowModal() != wxID_OK)
+                return;
+            m_optgroup->set_value("printhost_apikey", from_u8(dlg.token()), true);
+            m_optgroup->get_field("printhost_apikey")->field_changed();
+            // With a single printer on the account the host only needs to be filled in
+            if (m_config->opt_string("print_host").empty()) {
+                m_optgroup->set_value("print_host", wxString("anycubic"), true);
+                m_optgroup->get_field("print_host")->field_changed();
+            }
+        });
+        return sizer;
+    };
+
     option = m_optgroup->get_option("printhost_apikey");
     option.opt.width = Field::def_width_wider();
-    m_optgroup->append_single_option_line(option);
+    Line apikey_line = m_optgroup->create_single_option_line(option);
+    apikey_line.append_widget(anycubic_login);
+    m_optgroup->append_line(apikey_line);
 
     option = m_optgroup->get_option("flashforge_serial_number");
     option.opt.width = Field::def_width_wider();
@@ -568,6 +590,10 @@ void PhysicalPrinterDialog::update_printhost_buttons()
         m_printhost_browse_btn->Show(host->has_auto_discovery());
         m_printhost_logout_btn->Show(host->is_logged_in());
         m_printhost_test_btn->SetLabel(host->is_cloud() ? _L("Login/Test") : _L("Test"));
+    }
+    if (m_anycubic_login_btn) {
+        const std::string agent = wxGetApp().preset_bundle->printers.get_edited_preset().config.opt_string("printer_agent");
+        m_anycubic_login_btn->Show(wxGetApp().resolve_printer_agent_id(agent) == ANYCUBIC_PRINTER_AGENT_ID);
     }
 }
 
@@ -812,6 +838,8 @@ void PhysicalPrinterDialog::on_dpi_changed(const wxRect& suggested_rect)
     m_printhost_test_btn->Rescale();
     m_printhost_generate_creds_btn->Rescale();
     m_printhost_logout_btn->Rescale();
+    if (m_anycubic_login_btn)
+        m_anycubic_login_btn->Rescale();
     if (m_printhost_cafile_browse_btn)
         m_printhost_cafile_browse_btn->Rescale();
 

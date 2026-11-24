@@ -7,6 +7,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -59,6 +60,7 @@ private:
     // Finds the printer of the account the settings name; empty on failure, with `error` set
     std::string resolve_printer(AnycubicCloud::Client& client, AnycubicCloud::Printer& printer, std::string& error);
     void        run_connection(std::string dev_id, std::string token, uint64_t generation);
+    void        report_token_refused(const std::string& dev_id, const std::string& error, const std::function<bool()>& stale);
     void        stop_connection_thread();
 
     std::mutex                              m_cloud_mutex; // Guards everything below

@@ -94,6 +94,9 @@ public:
 
     // Exchanges or adopts the token. Every other call needs it to have succeeded.
     bool login(std::string& error);
+    // Whether the last login failed because the cloud refused the token (expired, or not a token), rather than
+    // because the cloud could not be reached. Logging in again on the web site gives a new token.
+    bool token_refused() const { return m_token_refused; }
 
     bool list_printers(std::vector<Printer>& printers, std::string& error);
     bool printer_info(const std::string& printer_id, nlohmann::json& info, std::string& error);
@@ -113,7 +116,9 @@ private:
 
     std::string m_pasted_token;
     std::string m_user_token;
-    TokenKind   m_kind = TokenKind::slicer;
+    TokenKind   m_kind          = TokenKind::slicer;
+    bool        m_answered      = false; // The last request got an answer from the cloud
+    bool        m_token_refused = false;
 };
 
 } // namespace AnycubicCloud

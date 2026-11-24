@@ -307,11 +307,16 @@ bool Client::request(const std::string& method, const std::string& endpoint, con
     if (method == "POST")
         http.set_post_body(body.is_null() ? std::string("{}") : body.dump());
 
-    bool ok = false;
+    bool ok    = false;
+    m_answered = false;
     http.timeout_connect(10)
         .timeout_max(30)
-        .on_complete([&](std::string answer, unsigned /*status*/) { ok = parse_response(answer, data, error); })
+        .on_complete([&](std::string answer, unsigned /*status*/) {
+            m_answered = true;
+            ok         = parse_response(answer, data, error);
+        })
         .on_error([&](std::string answer, std::string http_error, unsigned status) {
+            m_answered = status != 0;
             // A refusal usually still carries the server's message
             const auto json = nlohmann::json::parse(answer, nullptr, false);
             if (json.is_object() && json.contains("msg") && json["msg"].is_string())
@@ -332,6 +337,7 @@ bool Client::login(std::string& error)
     }
     if (!m_user_token.empty())
         return true;
+    m_token_refused = false;
 
     // A user token taken from the web site is used as it is, and checked the way the web site checks it. It is
     // tried first so that a web token is never sent to the exchange, which only takes Slicer Next access tokens.
@@ -342,6 +348,7 @@ bool Client::login(std::string& error)
     if (request("GET", "/user/profile/userInfo", nullptr, data, web_error))
         return true;
     m_user_token.clear();
+    const bool web_refused = m_answered;
 
     // Otherwise it is a Slicer Next access token, exchanged for a user token
     m_kind = TokenKind::slicer;
@@ -355,15 +362,22 @@ bool Client::login(std::string& error)
 
     BOOST_LOG_TRIVIAL(warning) << "AnycubicCloud: the token is refused as a web token (" << web_error
                                << ") and as a Slicer Next token (" << slicer_error << ")";
-    error = web_error;
+    error           = web_error;
+    m_token_refused = web_refused && m_answered;
     return false;
 }
 
 bool Client::list_printers(std::vector<Printer>& printers, std::string& error)
 {
     nlohmann::json data;
-    if (!login(error) || !request("GET", "/work/printer/getPrinters", nullptr, data, error))
+    if (!login(error))
         return false;
+    if (!request("GET", "/work/printer/getPrinters", nullptr, data, error)) {
+        // A refusal may mean the session ended, so the next call checks the token again
+        if (m_answered)
+            m_user_token.clear();
+        return false;
+    }
     printers = parse_printers(data);
     return true;
 }

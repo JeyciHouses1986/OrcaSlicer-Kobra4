@@ -7,8 +7,14 @@ each filament only through the cloud's print order. The Kobra 4 system presets s
 
 ## How it is set up
 
-The account is identified by a token the user pastes into the printer settings' API key field. Logging in to
-Anycubic needs a captcha or a second factor, so the agent does not log in itself. Two tokens work:
+The account is identified by a token kept in the physical printer's API key field. Logging in to Anycubic needs a
+captcha or a second factor, so the agent never logs in with a password. Instead, the physical printer dialog offers
+"Log in to Anycubic" when the selected preset uses this agent: `AnycubicLoginDialog` opens Anycubic's own login
+page in an embedded browser, reads the token the site keeps in its local storage once the user is in, checks it
+with the cloud and fills in the API key. The token ends when the user logs out on the web site or when it expires;
+the agent then reports the refusal once instead of retrying, and logging in again gives a new token.
+
+A token can also be pasted by hand. Two kinds work:
 
 - the user token the Anycubic web site keeps in its local storage (`XX-Token`), which the agent uses as it is;
 - the access token Anycubic Slicer Next keeps in its configuration, which the agent exchanges for a user token.
@@ -45,4 +51,5 @@ header lines of the G-code, which `GCode/AnycubicHeader` writes.
 
 - [`AnycubicPrinterAgent`](../../src/slic3r/Utils/AnycubicPrinterAgent.hpp) — the agent
 - [`AnycubicCloud`](../../src/slic3r/Utils/AnycubicCloud.hpp) — cloud client and helpers
+- [`AnycubicLoginDialog`](../../src/slic3r/GUI/AnycubicLoginDialog.hpp) — login in an embedded browser
 - [`AnycubicHeader`](../../src/libslic3r/GCode/AnycubicHeader.hpp) — ACE header lines in the G-code

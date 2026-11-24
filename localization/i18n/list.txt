@@ -305,6 +305,7 @@ src/slic3r/GUI/Downloader.cpp
 src/slic3r/GUI/DownloaderFileGet.cpp
 src/slic3r/GUI/FileArchiveDialog.cpp
 src/slic3r/GUI/PrinterCloudAuthDialog.cpp
+src/slic3r/GUI/AnycubicLoginDialog.cpp
 src/slic3r/GUI/PrinterWebViewHandler.cpp
 src/slic3r/GUI/AMSDryControl.cpp
 src/slic3r/GUI/AMSDryControl.hpp

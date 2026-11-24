@@ -6,6 +6,7 @@
 #include "NetworkAgentFactory.hpp"
 #include "bambu_networking.hpp"
 #include "libslic3r/PresetBundle.hpp"
+#include "libslic3r/format.hpp"
 #include "slic3r/GUI/DeviceCore/DevStorage.h"
 #include "slic3r/GUI/GUI_App.hpp"
 #include "slic3r/GUI/I18N.hpp"
@@ -156,6 +157,18 @@ std::string AnycubicPrinterAgent::resolve_printer(AnycubicCloud::Client& client,
     return {};
 }
 
+void AnycubicPrinterAgent::report_token_refused(const std::string& dev_id, const std::string& error, const std::function<bool()>& stale)
+{
+    // Retrying cannot help: the user has to log in to Anycubic again for a new token
+    if (stale())
+        return;
+    // TRN %1% is the reason Anycubic Cloud gives, such as "Login information has expired. Please login again."
+    dispatch_local_connect(ConnectStatusFailed, dev_id,
+                           format(_u8L("Anycubic Cloud refused the login: %1%\nOpen the printer's connection settings and log in to "
+                                       "Anycubic again."),
+                                  error));
+}
+
 void AnycubicPrinterAgent::run_connection(std::string dev_id, std::string token, uint64_t generation)
 {
     auto stale  = [this, generation]() { return generation != m_generation.load(); };
@@ -166,6 +179,10 @@ void AnycubicPrinterAgent::run_connection(std::string dev_id, std::string token,
     std::string            error;
     for (int attempt = 0; resolve_printer(*client, printer, error).empty(); ++attempt) {
         BOOST_LOG_TRIVIAL(warning) << "AnycubicPrinterAgent: cannot reach the printer through Anycubic Cloud: " << error;
+        if (client->token_refused()) {
+            report_token_refused(dev_id, error, stale);
+            return;
+        }
         if (!wait_unless(first_retry_delay * (1 << std::min(attempt, 5)), stale))
             return;
     }
@@ -188,6 +205,10 @@ void AnycubicPrinterAgent::run_connection(std::string dev_id, std::string token,
         std::vector<AnycubicCloud::Printer> printers;
         if (!client->list_printers(printers, error)) {
             BOOST_LOG_TRIVIAL(warning) << "AnycubicPrinterAgent: status poll failed: " << error;
+            if (client->token_refused()) {
+                report_token_refused(dev_id, error, stale);
+                return;
+            }
             continue;
         }
         if (const AnycubicCloud::Printer* current = AnycubicCloud::choose_printer(printers, printer.id); current && !stale())
