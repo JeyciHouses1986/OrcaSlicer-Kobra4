@@ -1,3 +1,41 @@
+# OrcaSlicer for the Anycubic Kobra 4 and ACE 2 Pro
+
+> [!NOTE]
+> This is an unofficial fork of [OrcaSlicer](https://github.com/OrcaSlicer/OrcaSlicer). It is not affiliated with, or endorsed by, OrcaSlicer or Anycubic. The original OrcaSlicer README follows below.
+
+This fork lets OrcaSlicer slice for the **Anycubic Kobra 4** with the **ACE 2 Pro** multi-color unit and send prints to it through the **Anycubic Cloud**, the same way Anycubic Slicer Next does, without switching the printer to LAN mode.
+
+## What it adds
+
+- **Kobra 4 profiles** for the 0.25, 0.4, 0.6 and 0.8 mm nozzles, with their process and filament presets.
+- **The ACE header** that the Kobra 4 firmware reads from the G-code, so it knows which ACE slot feeds each filament.
+- **Cloud printing**: the print dialog uploads the G-code to your Anycubic account and starts it on the printer, with the filament-to-ACE-slot mapping you choose and an optional timelapse.
+- **Device page**: the printer's state, job progress, layers, remaining time and temperatures; the filament loaded in each ACE slot; and the printer's camera.
+- **Printer control** while a job runs: pause, resume, stop, bed and nozzle temperature and fan speed.
+- **ACE 2 Pro dryer**: humidity is shown for each unit and drying can be started or stopped from the device page.
+
+## Setting it up
+
+1. Install a build of this fork (see *Downloads* below) and add the **Anycubic Kobra 4** printer from the printer selection.
+2. Open the physical printer dialog (the connection icon next to the printer), choose **Log in to Anycubic** and sign in with your Anycubic account. The sign-in token stays in OrcaSlicer's local settings on your computer.
+3. In **Host**, type the printer's name as it appears in your Anycubic account. With a single printer on the account, any text works.
+4. The **Device** tab then shows the printer, and **Print** sends jobs to it.
+
+## Limitations
+
+- Everything goes through the Anycubic Cloud, so the printer and your computer need internet access. LAN mode is not supported.
+- The cloud is polled every 15 seconds, so the device page lags behind the printer by up to that long.
+- Temperatures and fans can only be changed while a job is running, because the cloud applies them to the job.
+- Axis moves, homing and other manual G-code from the device page are not available through the cloud.
+- Timelapses recorded by the printer cannot be downloaded from OrcaSlicer; take them from the printer's USB drive.
+- The camera needs internet access to load Agora's web player, which the printer streams through.
+
+## Downloads
+
+There are no releases yet. Builds for Windows and Linux are produced by the [Build all](../../actions/workflows/build_all.yml) workflow and can be downloaded from the *Artifacts* of a successful run (a GitHub account is needed to download them).
+
+---
+
 <div align="center">
 
 <picture>
