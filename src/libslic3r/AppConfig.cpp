@@ -759,8 +759,9 @@ void AppConfig::set_defaults()
 
     if (get("use_printer_agents").empty())
     {
-        // false = legacy behavior using print hosts
-        set_bool("use_printer_agents", false);
+        // false = legacy behavior using print hosts. This fork turns agents on, since the Kobra 4 prints through the
+        // Anycubic Cloud agent.
+        set_bool("use_printer_agents", true);
     }
 
     // Remove legacy window positions/sizes

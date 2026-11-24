@@ -10,10 +10,11 @@ each filament only through the cloud's print order. The Kobra 4 system presets s
 The account is identified by a token the user pastes into the printer settings' API key field. Logging in to
 Anycubic needs a captcha or a second factor, so the agent does not log in itself. Two tokens work:
 
-- the access token Anycubic Slicer Next keeps in its configuration, which the agent exchanges for a user token;
-- the user token the Anycubic web site keeps in its local storage, which the agent uses as it is.
+- the user token the Anycubic web site keeps in its local storage (`XX-Token`), which the agent uses as it is;
+- the access token Anycubic Slicer Next keeps in its configuration, which the agent exchanges for a user token.
 
-They cannot be told apart, so the exchange is tried first and the web form is the fallback. The host field names
+They cannot be told apart, so the agent first checks the token as the web site does and falls back to the
+exchange, so that a web token is never sent to it. The host field names
 the printer (its name in the Anycubic app, or its cloud id) when the account has several; with one printer any
 placeholder works.
 

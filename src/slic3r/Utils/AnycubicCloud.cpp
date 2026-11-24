@@ -306,7 +306,12 @@ bool Client::request(const std::string& method, const std::string& endpoint, con
         .timeout_max(30)
         .on_complete([&](std::string answer, unsigned /*status*/) { ok = parse_response(answer, data, error); })
         .on_error([&](std::string answer, std::string http_error, unsigned status) {
-            error = http_error.empty() ? "HTTP " + std::to_string(status) : http_error;
+            // A refusal usually still carries the server's message
+            const auto json = nlohmann::json::parse(answer, nullptr, false);
+            if (json.is_object() && json.contains("msg") && json["msg"].is_string())
+                error = json["msg"].get<std::string>();
+            else
+                error = http_error.empty() ? "HTTP " + std::to_string(status) : http_error;
             BOOST_LOG_TRIVIAL(warning) << "AnycubicCloud: " << endpoint << " failed: " << error;
         })
         .perform_sync();
@@ -322,23 +327,29 @@ bool Client::login(std::string& error)
     if (!m_user_token.empty())
         return true;
 
-    // A Slicer Next access token is exchanged for a user token
-    m_kind = TokenKind::slicer;
+    // A user token taken from the web site is used as it is, and checked the way the web site checks it. It is
+    // tried first so that a web token is never sent to the exchange, which only takes Slicer Next access tokens.
+    m_kind       = TokenKind::web;
+    m_user_token = m_pasted_token;
     nlohmann::json data;
-    if (request("POST", "/v3/public/loginWithAccessToken", {{"device_type", "pcf"}, {"access_token", m_pasted_token}}, data, error) &&
+    std::string    web_error;
+    if (request("GET", "/user/profile/userInfo", nullptr, data, web_error))
+        return true;
+    m_user_token.clear();
+
+    // Otherwise it is a Slicer Next access token, exchanged for a user token
+    m_kind = TokenKind::slicer;
+    std::string slicer_error;
+    if (request("POST", "/v3/public/loginWithAccessToken", {{"device_type", "pcf"}, {"access_token", m_pasted_token}}, data,
+                slicer_error) &&
         data.is_object() && data.contains("token") && data["token"].is_string()) {
         m_user_token = data["token"].get<std::string>();
         return true;
     }
 
-    // Otherwise it is a user token taken from the web site, which is checked by asking for the printers
-    m_kind       = TokenKind::web;
-    m_user_token = m_pasted_token;
-    if (request("GET", "/work/printer/getPrinters", nullptr, data, error))
-        return true;
-
-    m_user_token.clear();
-    m_kind = TokenKind::slicer;
+    BOOST_LOG_TRIVIAL(warning) << "AnycubicCloud: the token is refused as a web token (" << web_error
+                               << ") and as a Slicer Next token (" << slicer_error << ")";
+    error = web_error;
     return false;
 }
 
