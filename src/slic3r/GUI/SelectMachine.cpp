@@ -7101,8 +7101,8 @@ static std::string printer_model_cover(const std::string& model_id)
     for (const auto& vendor : bundle->vendors)
         for (const auto& model : vendor.second.models)
             if (model.id == model_id) {
-                const boost::filesystem::path cover = boost::filesystem::path(resources_dir()) / "profiles" / vendor.second.id /
-                                                      (model.id + "_cover.png");
+                boost::filesystem::path cover = boost::filesystem::path(resources_dir()) / "profiles" / vendor.second.id /
+                                                (model.id + "_cover.png");
                 if (boost::filesystem::exists(cover))
                     return cover.make_preferred().string();
             }
