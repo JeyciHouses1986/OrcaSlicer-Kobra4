@@ -154,6 +154,8 @@ int AnycubicPrinterAgent::connect_printer(const PrinterConnectionParams& params)
 
     stop_connection_thread();
     init_device_info(params.dev_id, params.host, params.username, token, false, params.port);
+    // Files go to the cloud, never to the printer's storage, so there is always room for one
+    has_storage.store(true);
     {
         std::lock_guard<std::mutex> lock(m_cloud_mutex);
         m_client.reset();

@@ -168,6 +168,9 @@ protected:
     // Map filament type to OrcaFilamentLibrary preset ID for AMS sync compatibility
     static std::string map_filament_type_to_generic_id(const std::string& filament_type);
 
+    // The printer can take a file: the gcodes root has free space. The print dialog blocks printing without it.
+    std::atomic<bool> has_storage{false};
+
 private:
     int handle_request(const std::string& dev_id, const std::string& json_str);
     int send_version_info(const std::string& dev_id);
@@ -239,7 +242,6 @@ private:
 
     std::atomic<int>       next_jsonrpc_id{1};
     std::set<std::string>  available_objects;  // Track for feature detection
-    std::atomic<bool>      has_storage{false}; // The gcodes root has free space
 
     std::atomic<bool>   ws_stop{false};
     std::atomic<bool>   ws_reconnect_requested{false};  // Flag to trigger reconnection
