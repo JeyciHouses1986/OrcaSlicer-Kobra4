@@ -1,9 +1,17 @@
 #include "WebMediaController.hpp"
+#include "GUI_App.hpp"
 #include "IPrinterAgent.hpp"
+#include "slic3r/Utils/NetworkAgent.hpp"
 
+#include <nlohmann/json.hpp>
+#include <wx/app.h>
 #include <wx/gdicmn.h>
 #include <wx/uri.h>
+#include <wx/weakref.h>
 #include <wx/webview.h>
+
+#include <memory>
+#include <string>
 
 namespace Slic3r { namespace GUI {
 
@@ -24,6 +32,29 @@ WebMediaController::WebMediaController(wxWebView* webview)
     : m_webview(webview)
 {
     initialize_webview(m_webview);
+    if (m_webview)
+        m_webview->Bind(wxEVT_WEBVIEW_SCRIPT_MESSAGE_RECEIVED, [this](wxWebViewEvent& evt) { on_script_message(evt.GetString()); });
+}
+
+void WebMediaController::on_script_message(const wxString& message)
+{
+    const auto json = nlohmann::json::parse(message.ToUTF8().data(), nullptr, false);
+    if (!json.is_object() || json.value("command", "") != "camera_session" || m_stream_mode != CameraStreamMode::web_page)
+        return;
+    auto* agent         = wxGetApp().getAgent();
+    auto  printer_agent = agent ? agent->get_printer_agent() : nullptr;
+    if (!printer_agent)
+        return;
+    // The page may be gone or showing another stream by the time the answer comes
+    wxWeakRef<wxWebView> webview(m_webview);
+    printer_agent->request_camera_session([webview](std::string session) {
+        wxTheApp->CallAfter([webview, session = std::move(session)]() {
+            if (!webview)
+                return;
+            const std::string argument = session.empty() ? "null" : session;
+            webview->RunScript("if (typeof orcaCameraSession === 'function') orcaCameraSession(" + wxString::FromUTF8(argument) + ");");
+        });
+    });
 }
 
 void WebMediaController::Load(wxURI url)
@@ -71,6 +102,9 @@ void WebMediaController::Play()
                 "cameraRefreshInterval = setInterval(refreshCameraFrame,200);"
                 "</script></body></html>";
         m_webview->SetPage(html, url);
+    } else if (m_stream_mode == CameraStreamMode::web_page) {
+        // The page plays the stream itself, after asking for its session (see on_script_message)
+        m_webview->LoadURL(url);
     } else {
         // Load MJPEG streams as the top-level document.  Some embedded WebView
         // backends buffer a multipart stream when it is used as an <img> resource,

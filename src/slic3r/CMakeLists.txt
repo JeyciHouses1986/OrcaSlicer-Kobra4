@@ -20,6 +20,8 @@ set(SLIC3R_GUI_SOURCES
     GUI/Widgets/FilamentLoad.hpp
     GUI/AboutDialog.cpp
     GUI/AboutDialog.hpp
+    GUI/AnycubicLoginDialog.cpp
+    GUI/AnycubicLoginDialog.hpp
     GUI/AnimatedTexture.cpp
     GUI/AnimatedTexture.hpp
     GUI/AmsMappingPopup.cpp
@@ -748,6 +750,10 @@ set(SLIC3R_GUI_SOURCES
     Utils/AstroBox.cpp
     Utils/AstroBox.hpp
     Utils/bambu_networking.hpp
+    Utils/AnycubicCloud.cpp
+    Utils/AnycubicCloud.hpp
+    Utils/AnycubicPrinterAgent.cpp
+    Utils/AnycubicPrinterAgent.hpp
     Utils/Bonjour.cpp
     Utils/Bonjour.hpp
     Utils/MeshInspect.cpp

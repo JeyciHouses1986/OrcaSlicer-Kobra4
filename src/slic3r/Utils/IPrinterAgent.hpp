@@ -65,7 +65,8 @@ enum class CameraStreamMode {
     https, // LAN or Cloud over TLS
     rtsp,  // LAN only
     webrtc, // Cloud only
-    http_snapshot // HTTP endpoint returning one image per request
+    http_snapshot, // HTTP endpoint returning one image per request
+    web_page       // A local page that plays the stream itself in the web view, with credentials from request_camera_session()
 };
 
 /**
@@ -476,6 +477,14 @@ public:
      * Only meaningful when get_camera_stream_mode() returns an HTTP, HTTPS, or RTSP mode.
      */
     virtual std::string get_camera_url() const { return {}; }
+
+    /**
+     * For CameraStreamMode::web_page: the page at get_camera_url() asks for what it needs to open one viewing
+     * session, such as a vendor's short-lived stream credentials, by posting {"command": "camera_session"}.
+     * The agent answers with a JSON object for that page, or an empty string when it has none, without blocking
+     * the caller; `callback` may run on any thread.
+     */
+    virtual void request_camera_session(std::function<void(std::string)> callback) { callback({}); }
 };
 
 } // namespace Slic3r

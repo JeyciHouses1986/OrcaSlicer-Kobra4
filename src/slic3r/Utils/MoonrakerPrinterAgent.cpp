@@ -605,19 +605,8 @@ int MoonrakerPrinterAgent::set_queue_on_main_fn(QueueOnMainFn fn)
     return BAMBU_NETWORK_SUCCESS;
 }
 
-void MoonrakerPrinterAgent::build_ams_payload(int ams_count, int max_lane_index, const std::vector<AmsTrayData>& trays)
+nlohmann::json MoonrakerPrinterAgent::ams_status_json(int ams_count, int max_lane_index, const std::vector<AmsTrayData>& trays) const
 {
-
-    // Look up MachineObject via DeviceManager
-    auto* dev_manager = GUI::wxGetApp().getDeviceManager();
-    if (!dev_manager) {
-        return;
-    }
-    MachineObject* obj = dev_manager->get_my_machine(device_info.dev_id);
-    if (!obj) {
-        return;
-    }
-
     // Build BBL-format JSON for DevFilaSystemParser::ParseV1_0
     nlohmann::json ams_json = nlohmann::json::object();
     nlohmann::json ams_array = nlohmann::json::array();
@@ -696,6 +685,7 @@ void MoonrakerPrinterAgent::build_ams_payload(int ams_count, int max_lane_index,
             tray_array.push_back(tray_json);
         }
         ams_unit["tray"] = tray_array;
+        decorate_ams_unit(ams_id, ams_unit);
         ams_array.push_back(ams_unit);
     }
 
@@ -709,9 +699,25 @@ void MoonrakerPrinterAgent::build_ams_payload(int ams_count, int max_lane_index,
     ams_json["ams_exist_bits"] = ams_exist_ss.str();
     ams_json["tray_exist_bits"] = tray_exist_ss.str();
 
+    return ams_json;
+}
+
+void MoonrakerPrinterAgent::build_ams_payload(int ams_count, int max_lane_index, const std::vector<AmsTrayData>& trays)
+{
+
+    // Look up MachineObject via DeviceManager
+    auto* dev_manager = GUI::wxGetApp().getDeviceManager();
+    if (!dev_manager) {
+        return;
+    }
+    MachineObject* obj = dev_manager->get_my_machine(device_info.dev_id);
+    if (!obj) {
+        return;
+    }
+
     // Wrap in the expected structure for ParseV1_0
     nlohmann::json print_json = nlohmann::json::object();
-    print_json["ams"] = ams_json;
+    print_json["ams"] = ams_status_json(ams_count, max_lane_index, trays);
 
     // Call the parser to populate DevFilaSystem
     DevFilaSystemParser::ParseV1_0(print_json, obj, obj->GetFilaSystem().get(), false);
@@ -811,6 +817,7 @@ std::string MoonrakerPrinterAgent::map_filament_type_to_generic_id(const std::st
         {"PLA HIGH SPEED", "PLA High Speed"},
         {"PLA-HS", "PLA High Speed"},
         {"PLA HS", "PLA High Speed"},
+        {"PLA GLOW", "PLA"},
 
         // ABS/ASA variants
         {"ABS", "ABS"},
@@ -1643,6 +1650,19 @@ void MoonrakerPrinterAgent::dispatch_local_connect(int state, const std::string&
     } else {
         dispatch();
     }
+}
+
+void MoonrakerPrinterAgent::run_on_main(std::function<void()> fn)
+{
+    QueueOnMainFn queue_fn;
+    {
+        std::lock_guard<std::recursive_mutex> lock(state_mutex);
+        queue_fn = queue_on_main_fn;
+    }
+    if (queue_fn)
+        queue_fn(std::move(fn));
+    else
+        fn();
 }
 
 void MoonrakerPrinterAgent::dispatch_printer_connected(const std::string& dev_id)

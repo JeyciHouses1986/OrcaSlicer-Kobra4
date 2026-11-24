@@ -8,6 +8,7 @@
 	"printer_technology": "FFF",
 	"printer_settings_id": "Anycubic Kobra 4 0.4 nozzle",
 	"printer_model": "Anycubic Kobra 4",
+	"printer_agent": "anycubic",
 	"printer_variant": "0.4",
 	"nozzle_diameter": [
 		"0.4"

@@ -2697,7 +2697,8 @@ void MachineObject::update_print_progress(const json& value)
 static bool connects_through_moonraker_agent(const std::string& agent_id)
 {
     return agent_id == MOONRAKER_PRINTER_AGENT_ID || agent_id == QIDI_PRINTER_AGENT_ID ||
-           agent_id == SNAPMAKER_PRINTER_AGENT_ID || agent_id == CREALITYPRINT_PRINTER_AGENT_ID;
+           agent_id == SNAPMAKER_PRINTER_AGENT_ID || agent_id == CREALITYPRINT_PRINTER_AGENT_ID ||
+           agent_id == ANYCUBIC_PRINTER_AGENT_ID;
 }
 
 int MachineObject::connect()

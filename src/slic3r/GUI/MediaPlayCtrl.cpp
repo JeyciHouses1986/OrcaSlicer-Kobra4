@@ -208,6 +208,7 @@ void MediaPlayCtrl::set_active_media_controller(CameraStreamMode mode)
 {
     switch (mode) {
     case CameraStreamMode::http_snapshot:
+    case CameraStreamMode::web_page:
         if (auto *web_ctrl = dynamic_cast<WebMediaController *>(m_web_ctrl))
             web_ctrl->set_mode(mode);
         m_active_media_controller = m_web_ctrl;
@@ -259,7 +260,8 @@ void MediaPlayCtrl::SetMachineObject(MachineObject* obj)
     set_active_media_controller(mode);
 
     const bool uses_local_camera_url = mode == CameraStreamMode::http || mode == CameraStreamMode::https ||
-                                       mode == CameraStreamMode::http_snapshot || mode == CameraStreamMode::rtsp;
+                                       mode == CameraStreamMode::http_snapshot || mode == CameraStreamMode::rtsp ||
+                                       mode == CameraStreamMode::web_page;
     const bool uses_webrtc = mode == CameraStreamMode::webrtc;
     const std::string machine = obj ? obj->get_dev_id() : "";
     bool changed = false;
@@ -409,7 +411,8 @@ void MediaPlayCtrl::Play()
 
     if (!is_bbl) {
         const bool is_webrtc = mode == CameraStreamMode::webrtc;
-        const bool is_snapshot = mode == CameraStreamMode::http_snapshot;
+        // Both play in the web view, which reports no state back
+        const bool is_snapshot = mode == CameraStreamMode::http_snapshot || mode == CameraStreamMode::web_page;
         const bool is_http_stream = mode == CameraStreamMode::http || mode == CameraStreamMode::https || mode == CameraStreamMode::rtsp;
         if (!is_webrtc && !is_snapshot && !is_http_stream)
             return;
@@ -613,8 +616,9 @@ void MediaPlayCtrl::Stop(wxString const &msg, wxString const &msg2)
     switch (m_last_mode) {
     case CameraStreamMode::http:
     case CameraStreamMode::https:
-    case CameraStreamMode::http_snapshot: {
-        const bool snapshot = m_last_mode == CameraStreamMode::http_snapshot;
+    case CameraStreamMode::http_snapshot:
+    case CameraStreamMode::web_page: {
+        const bool snapshot = m_last_mode == CameraStreamMode::http_snapshot || m_last_mode == CameraStreamMode::web_page;
         if (m_last_state != MEDIASTATE_IDLE) {
             if (snapshot) {
                 if (m_active_media_controller)

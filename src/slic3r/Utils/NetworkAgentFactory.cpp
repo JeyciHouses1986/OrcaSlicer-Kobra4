@@ -2,6 +2,7 @@
 #include "CloudProvider.hpp"
 #include "IPrinterAgent.hpp"
 #include "ICloudServiceAgent.hpp"
+#include "AnycubicPrinterAgent.hpp"
 #include "BBLPrinterAgent.hpp"
 #include "OrcaPrinterAgent.hpp"
 #include "QidiPrinterAgent.hpp"
@@ -189,6 +190,7 @@ void NetworkAgentFactory::register_all_agents()
                                             // CrealityPrintAgent extends Moonraker behaviour
                                             // for K-series boards with CFS support.
     register_agent<MoonrakerPrinterAgent>();
+    register_agent<AnycubicPrinterAgent>();
 
     // Keep BBL as a built-in option. Python printer-agent plugins with the
     // same AgentInfo ID are listed separately under the plugin registry key.

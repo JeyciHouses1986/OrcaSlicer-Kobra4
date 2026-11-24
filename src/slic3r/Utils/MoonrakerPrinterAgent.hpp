@@ -120,8 +120,14 @@ protected:
 
     // Build ams JSON and call parser
     void build_ams_payload(int ams_count, int max_lane_index, const std::vector<AmsTrayData>& trays);
+    // The "ams" object of a push_status message, as build_ams_payload parses it
+    nlohmann::json ams_status_json(int ams_count, int max_lane_index, const std::vector<AmsTrayData>& trays) const;
     // Name shown for a filament unit, or empty for the AMS Lite name
     virtual std::string ams_unit_name(int /*ams_id*/) const { return {}; }
+    // Adds what a filament unit reports beyond its trays, such as its type, humidity or dryer, to its "ams" entry
+    virtual void decorate_ams_unit(int /*ams_id*/, nlohmann::json& /*unit*/) const {}
+    // Runs `fn` on the GUI thread, or at once when no GUI is attached
+    void run_on_main(std::function<void()> fn);
 
     // Methods that derived classes may need to override or access
     virtual bool init_device_info(const std::string& dev_id, const std::string& dev_ip, const std::string& username, const std::string& password, bool use_ssl, const std::string& port);
@@ -154,8 +160,22 @@ protected:
     // Trim whitespace and convert to uppercase
     static std::string trim_and_upper(const std::string& input);
 
+    // Callbacks into the device manager, queued on the main thread. Agents that replace the transport report
+    // their connection and status through these.
+    void dispatch_local_connect(int state, const std::string& dev_id, const std::string& msg);
+    void dispatch_printer_connected(const std::string& dev_id);
+    void dispatch_message(const std::string& dev_id, const std::string& payload);
+
+    // Uploads the file the print flow prepared; agents whose printers take files elsewhere override it
+    virtual bool upload_gcode(const std::string& local_path, const std::string& filename,
+                              const std::string& base_url, const std::string& api_key,
+                              OnUpdateStatusFn update_fn, WasCancelledFn cancel_fn);
+
     // Map filament type to OrcaFilamentLibrary preset ID for AMS sync compatibility
     static std::string map_filament_type_to_generic_id(const std::string& filament_type);
+
+    // The printer can take a file: the gcodes root has free space. The print dialog blocks printing without it.
+    std::atomic<bool> has_storage{false};
 
 private:
     int handle_request(const std::string& dev_id, const std::string& json_str);
@@ -179,9 +199,6 @@ private:
                           std::function<void(bool)> on_result = {}) const;
 
     void announce_printhost_device();
-    void dispatch_local_connect(int state, const std::string& dev_id, const std::string& msg);
-    void dispatch_printer_connected(const std::string& dev_id);
-    void dispatch_message(const std::string& dev_id, const std::string& payload);
     // Joins a stream stopped from its own callback, so a new stream can start without waiting on it under connect_mutex
     void join_stopped_status_stream();
     void run_status_stream(std::string dev_id, std::string base_url, std::string api_key, StatusStreamTimings timings);
@@ -197,11 +214,6 @@ private:
     int pause_print(const std::string& dev_id);
     int resume_print(const std::string& dev_id);
     int cancel_print(const std::string& dev_id);
-
-    // File upload
-    bool upload_gcode(const std::string& local_path, const std::string& filename,
-                      const std::string& base_url, const std::string& api_key,
-                      OnUpdateStatusFn update_fn, WasCancelledFn cancel_fn);
 
     // Connection thread management
     void perform_connection_async(const std::string& dev_id,
@@ -236,7 +248,6 @@ private:
 
     std::atomic<int>       next_jsonrpc_id{1};
     std::set<std::string>  available_objects;  // Track for feature detection
-    std::atomic<bool>      has_storage{false}; // The gcodes root has free space
 
     std::atomic<bool>   ws_stop{false};
     std::atomic<bool>   ws_reconnect_requested{false};  // Flag to trigger reconnection

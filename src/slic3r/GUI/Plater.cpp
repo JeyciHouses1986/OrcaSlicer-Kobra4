@@ -1,6 +1,7 @@
 #include "Plater.hpp"
 #include "LazyPage.hpp"
 #include "../Utils/NetworkAgent.hpp"
+#include "../Utils/NetworkAgentFactory.hpp"
 #include "IPrinterAgent.hpp"
 #include "CalibUtils.hpp"
 #include "Flashforge.hpp"
@@ -3833,8 +3834,10 @@ void Sidebar::update_all_preset_comboboxes(bool update_filament_combos)
         p_mainframe->set_print_button_to_default(MainFrame::PrintSelectType::ePrintPlate);
     } else {
         //p->btn_connect_printer->Show();
-        // ORCA: hide the physical-printer connection button when printer agents are enabled
-        p->m_printer_connect->Show(!use_printer_agents);
+        // ORCA: hide the physical-printer connection button when printer agents are enabled, except for the Anycubic
+        // Cloud agent, which reads its token and printer name from the physical printer's API key and host
+        const bool agent_reads_host = wxGetApp().resolve_printer_agent_id(cfg.opt_string("printer_agent")) == ANYCUBIC_PRINTER_AGENT_ID;
+        p->m_printer_connect->Show(!use_printer_agents || agent_reads_host);
 
         // ORCA: show/hide sync-ams button based on filament sync mode
         auto agent = wxGetApp().getAgent();

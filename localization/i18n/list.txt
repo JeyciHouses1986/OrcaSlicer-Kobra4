@@ -305,6 +305,7 @@ src/slic3r/GUI/Downloader.cpp
 src/slic3r/GUI/DownloaderFileGet.cpp
 src/slic3r/GUI/FileArchiveDialog.cpp
 src/slic3r/GUI/PrinterCloudAuthDialog.cpp
+src/slic3r/GUI/AnycubicLoginDialog.cpp
 src/slic3r/GUI/PrinterWebViewHandler.cpp
 src/slic3r/GUI/AMSDryControl.cpp
 src/slic3r/GUI/AMSDryControl.hpp
@@ -369,6 +370,7 @@ src/slic3r/GUI/Widgets/AMSItem.cpp
 src/slic3r/GUI/Widgets/DialogButtons.cpp
 src/slic3r/Utils/NetworkAgentFactory.cpp
 src/slic3r/Utils/MoonrakerPrinterAgent.cpp
+src/slic3r/Utils/AnycubicPrinterAgent.cpp
 src/slic3r/Utils/BBLNetworkPlugin.cpp
 src/slic3r/Utils/OrcaCloudServiceAgent.cpp
 src/slic3r/plugin/PluginAuditManager.cpp

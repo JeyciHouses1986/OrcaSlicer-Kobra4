@@ -1,0 +1,114 @@
+<!doctype html>
+<!--
+  The camera of an Anycubic printer reached through the Anycubic Cloud, shown on the device page.
+
+  The printer streams through Agora's WebRTC service, which only Agora's web SDK speaks. The page asks Orca for the
+  credentials of one viewing session (each viewing needs fresh ones), joins the session's channel and plays the
+  printer's video. It is loaded from a file, which makes it a secure context, as the SDK's encryption requires.
+-->
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+  #video { position: absolute; inset: 0; }
+  #video video { object-fit: contain !important; }
+  #status { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 16px;
+            color: #ddd; font: 14px sans-serif; text-align: center; }
+  .spinner { width: 28px; height: 28px; border: 3px solid #555; border-top-color: #ddd; border-radius: 50%;
+             animation: spin 1s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+<div id="video"></div>
+<div id="status"><div class="spinner"></div></div>
+<script>
+  // Agora's web SDK, MIT licensed, from a CDN: the camera needs the internet anyway
+  const SDK_URLS = [
+    "https://cdn.jsdelivr.net/npm/agora-rtc-sdk-ng@4.24.4/AgoraRTC_N-production.js",
+    "https://unpkg.com/agora-rtc-sdk-ng@4.24.4/AgoraRTC_N-production.js",
+  ];
+
+  const statusBox = document.getElementById("status");
+  let messages = {};
+  let client = null;
+
+  function showText(text) {
+    statusBox.textContent = text || "";
+    statusBox.style.display = text ? "flex" : "none";
+  }
+
+  function loadSdk(index) {
+    return new Promise((resolve, reject) => {
+      if (window.AgoraRTC) return resolve(window.AgoraRTC);
+      if (index >= SDK_URLS.length) return reject(new Error("sdk"));
+      const script = document.createElement("script");
+      script.src = SDK_URLS[index];
+      script.onload = () => resolve(window.AgoraRTC);
+      script.onerror = () => loadSdk(index + 1).then(resolve, reject);
+      document.head.appendChild(script);
+    });
+  }
+
+  function base64ToBytes(value) {
+    const binary = atob(value);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return bytes;
+  }
+
+  async function play(user) {
+    const track = await client.subscribe(user, "video");
+    track.play(document.getElementById("video"), { fit: "contain" });
+    showText("");
+  }
+
+  async function start(session) {
+    let AgoraRTC;
+    try {
+      AgoraRTC = await loadSdk(0);
+    } catch (e) {
+      showText(messages.no_player);
+      return;
+    }
+    AgoraRTC.setLogLevel(3); // warnings and errors only
+    client = AgoraRTC.createClient({ mode: "live", codec: "h264", role: "host" });
+    client.on("user-published", (user, mediaType) => { if (mediaType === "video") play(user); });
+    const ended = () => showText(messages.ended);
+    client.on("user-unpublished", ended);
+    client.on("user-left", ended);
+    client.on("token-privilege-did-expire", ended);
+    client.on("connection-state-change", (state) => { if (state === "DISCONNECTED") ended(); });
+    try {
+      client.setEncryptionConfig(String(session.encryption_mode).toLowerCase().replace(/_/g, "-"),
+                                 session.encryption_key, base64ToBytes(session.encryption_kdf_salt));
+      await client.join(session.appid, session.channel, session.rtc_token || null, session.client_uid || null);
+      showText(messages.waiting);
+      for (const user of client.remoteUsers)
+        if (user.hasVideo) await play(user);
+    } catch (e) {
+      console.error("Anycubic camera:", e);
+      showText(messages.failed);
+    }
+  }
+
+  // Orca's answer to {"command": "camera_session"}
+  window.orcaCameraSession = function (reply) {
+    messages = (reply && reply.messages) || {};
+    if (!reply || !reply.session) {
+      showText(messages.failed || "⚠");
+      return;
+    }
+    start(reply.session);
+  };
+
+  // Leaving the page (stop, or another printer) ends the viewing session
+  window.addEventListener("pagehide", () => { if (client) client.leave(); });
+
+  if (window.wx && window.wx.postMessage)
+    window.wx.postMessage(JSON.stringify({ command: "camera_session" }));
+</script>
+</body>
+</html>
