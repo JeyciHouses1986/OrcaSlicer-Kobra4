@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <cctype>
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <utility>
@@ -61,6 +62,8 @@ int json_int(const nlohmann::json& obj, const char* key, int fallback = 0)
         return fallback;
     if (it->is_number_integer())
         return it->get<int>();
+    if (it->is_number())
+        return int(std::lround(it->get<double>()));
     if (it->is_string()) {
         const std::string text = it->get<std::string>();
         char*             end  = nullptr;
@@ -282,6 +285,46 @@ nlohmann::json start_print_order(const std::string& printer_id, int64_t file_id,
     };
 }
 
+void parse_temperatures(const nlohmann::json& printer_info, int& nozzle, int& bed)
+{
+    nozzle = bed = -1;
+    if (!printer_info.is_object())
+        return;
+    auto parameter = printer_info.find("parameter");
+    if (parameter == printer_info.end() || !parameter->is_object())
+        return;
+    nozzle = json_int(*parameter, "curr_nozzle_temp", -1);
+    bed    = json_int(*parameter, "curr_hotbed_temp", -1);
+}
+
+std::optional<Job> latest_job(const nlohmann::json& projects, const std::string& printer_id)
+{
+    if (!projects.is_array())
+        return std::nullopt;
+    // Newest first, as the cloud lists them
+    for (const auto& project : projects) {
+        if (!project.is_object() || json_string(project, "printer_id") != printer_id)
+            continue;
+        Job job;
+        job.name           = json_string(project, "gcode_name");
+        job.print_status   = json_int(project, "print_status");
+        job.paused         = json_int(project, "pause") != 0;
+        job.progress       = json_int(project, "progress", -1);
+        job.remain_minutes = json_int(project, "remain_time", -1);
+        // The layers are in the "settings" object, which the cloud sends as JSON text
+        auto settings = project.find("settings");
+        if (settings != project.end()) {
+            const nlohmann::json parsed = settings->is_string() ? nlohmann::json::parse(settings->get<std::string>(), nullptr, false) : *settings;
+            if (parsed.is_object()) {
+                job.layer        = json_int(parsed, "curr_layer", -1);
+                job.total_layers = json_int(parsed, "total_layers", -1);
+            }
+        }
+        return job;
+    }
+    return std::nullopt;
+}
+
 const Printer* choose_printer(const std::vector<Printer>& printers, const std::string& wanted)
 {
     for (const Printer& printer : printers)
@@ -447,6 +490,11 @@ bool Client::upload_file(const std::string&                      path,
     if (!registered && error.empty())
         error = "Anycubic Cloud did not accept the upload";
     return registered;
+}
+
+bool Client::list_projects(nlohmann::json& projects, std::string& error)
+{
+    return login(error) && request("GET", "/work/project/getProjects?page=1&limit=10", nullptr, projects, error);
 }
 
 bool Client::send_order(const nlohmann::json& order, std::string& error)

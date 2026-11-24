@@ -167,15 +167,85 @@ TEST_CASE("The start order prints the uploaded file with the slot mapping", "[An
     CHECK(start_print_order("12", 99, {})["ams_info"].is_null());
 }
 
+TEST_CASE("Temperatures are read from the printer's parameters", "[AnycubicCloud]")
+{
+    int nozzle = 0, bed = 0;
+    parse_temperatures(nlohmann::json::parse(R"({"parameter": {"curr_nozzle_temp": 215.4, "curr_hotbed_temp": "60"}})"), nozzle, bed);
+    CHECK(nozzle == 215);
+    CHECK(bed == 60);
+    parse_temperatures(nlohmann::json::parse(R"({"parameter": null})"), nozzle, bed);
+    CHECK(nozzle == -1);
+    CHECK(bed == -1);
+}
+
+TEST_CASE("The newest job of the printer is taken from the project list", "[AnycubicCloud]")
+{
+    const auto projects = nlohmann::json::parse(R"([
+        {"printer_id": 34, "gcode_name": "other printer", "print_status": 1},
+        {"printer_id": 12, "gcode_name": "frame.gcode", "print_status": 1, "pause": 0, "progress": 42,
+         "remain_time": 75, "settings": "{\"curr_layer\": 30, \"total_layers\": 120}"},
+        {"printer_id": 12, "gcode_name": "older.gcode", "print_status": 2}
+    ])");
+    const auto job = latest_job(projects, "12");
+    REQUIRE(job.has_value());
+    CHECK(job->name == "frame.gcode");
+    CHECK(job->print_status == Job::printing);
+    CHECK_FALSE(job->paused);
+    CHECK(job->progress == 42);
+    CHECK(job->remain_minutes == 75);
+    CHECK(job->layer == 30);
+    CHECK(job->total_layers == 120);
+
+    CHECK_FALSE(latest_job(projects, "56").has_value());
+    CHECK_FALSE(latest_job(nlohmann::json(), "12").has_value());
+}
+
 TEST_CASE("The device page sees a busy printer as running", "[AnycubicPrinterAgent]")
 {
     Printer printer;
     printer.is_printing = 2;
-    CHECK(AnycubicPrinterAgent::status_payload(printer)["print"]["gcode_state"] == "RUNNING");
+    CHECK(AnycubicPrinterAgent::status_payload(printer, {})["print"]["gcode_state"] == "RUNNING");
     printer.is_printing = 1;
-    const auto idle = AnycubicPrinterAgent::status_payload(printer);
+    const auto idle = AnycubicPrinterAgent::status_payload(printer, {});
     CHECK(idle["print"]["gcode_state"] == "IDLE");
     CHECK(idle["print"]["command"] == "push_status");
+    CHECK(idle["print"].count("nozzle_temper") == 0);
     // Storage must be reported present, or the send dialog blocks
     CHECK(idle["print"]["sdcard"] == true);
+}
+
+TEST_CASE("The device page shows the job, its progress and the temperatures", "[AnycubicPrinterAgent]")
+{
+    Printer printer;
+    printer.is_printing = 2;
+    AnycubicPrinterAgent::CloudState state;
+    state.nozzle_temp = 250;
+    state.bed_temp    = 70;
+    state.job         = Job{};
+    state.job->name           = "frame.gcode";
+    state.job->print_status   = Job::printing;
+    state.job->progress       = 42;
+    state.job->remain_minutes = 75;
+    state.job->layer          = 30;
+    state.job->total_layers   = 120;
+
+    auto print = AnycubicPrinterAgent::status_payload(printer, state)["print"];
+    CHECK(print["gcode_state"] == "RUNNING");
+    CHECK(print["nozzle_temper"] == 250);
+    CHECK(print["bed_temper"] == 70);
+    CHECK(print["subtask_name"] == "frame.gcode");
+    CHECK(print["mc_percent"] == 42);
+    CHECK(print["mc_remaining_time"] == 75);
+    CHECK(print["layer_num"] == 30);
+    CHECK(print["total_layer_num"] == 120);
+
+    state.job->paused = true;
+    CHECK(AnycubicPrinterAgent::status_payload(printer, state)["print"]["gcode_state"] == "PAUSE");
+    state.job->print_status = Job::preheating;
+    CHECK(AnycubicPrinterAgent::status_payload(printer, state)["print"]["gcode_state"] == "PREPARE");
+
+    // Once the printer is idle, the page shows how the last job ended
+    printer.is_printing     = 1;
+    state.job->print_status = Job::complete;
+    CHECK(AnycubicPrinterAgent::status_payload(printer, state)["print"]["gcode_state"] == "FINISH");
 }

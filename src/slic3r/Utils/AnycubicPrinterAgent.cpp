@@ -19,6 +19,7 @@
 #include <cstdint>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <thread>
 #include <utility>
@@ -57,15 +58,54 @@ AgentInfo AnycubicPrinterAgent::get_agent_info_static()
                      "Anycubic printers through the Anycubic Cloud, with ACE slot mapping"};
 }
 
-nlohmann::json AnycubicPrinterAgent::status_payload(const AnycubicCloud::Printer& printer)
+namespace {
+const char* gcode_state(const AnycubicCloud::Printer& printer, const std::optional<AnycubicCloud::Job>& job)
+{
+    using AnycubicCloud::Job;
+    if (!job)
+        return printer.busy() ? "RUNNING" : "IDLE";
+    if (printer.busy()) {
+        switch (job->print_status) {
+        case Job::downloading:
+        case Job::checking:
+        case Job::preheating: return "PREPARE";
+        default: return job->paused ? "PAUSE" : "RUNNING";
+        }
+    }
+    // An idle printer shows how its last job ended
+    switch (job->print_status) {
+    case Job::complete: return "FINISH";
+    case Job::cancelled: return "FAILED";
+    default: return "IDLE";
+    }
+}
+} // namespace
+
+nlohmann::json AnycubicPrinterAgent::status_payload(const AnycubicCloud::Printer& printer, const CloudState& state)
 {
     nlohmann::json payload;
     auto&          print      = payload["print"];
     print["command"]            = "push_status";
     print["msg"]                = 0;
     print["support_mqtt_alive"] = true;
-    print["gcode_state"]        = printer.busy() ? "RUNNING" : "IDLE";
+    print["gcode_state"]        = gcode_state(printer, state.job);
     print["mc_print_stage"]     = printer.busy() ? 1 : 0;
+    if (state.nozzle_temp >= 0)
+        print["nozzle_temper"] = state.nozzle_temp;
+    if (state.bed_temp >= 0)
+        print["bed_temper"] = state.bed_temp;
+    if (const auto& job = state.job) {
+        print["subtask_name"] = job->name;
+        print["gcode_file"]   = job->name;
+        if (job->progress >= 0)
+            print["mc_percent"] = std::clamp(job->progress, 0, 100);
+        if (job->remain_minutes >= 0)
+            print["mc_remaining_time"] = job->remain_minutes;
+        if (job->layer >= 0)
+            print["layer_num"] = job->layer;
+        if (job->total_layers >= 0)
+            print["total_layer_num"] = job->total_layers;
+    }
     print["mc_print_error_code"] = 0;
     print["print_error"]         = 0;
     // The file goes to the cloud, never to the printer's storage, but the send dialog wants storage to be present.
@@ -169,6 +209,19 @@ void AnycubicPrinterAgent::report_token_refused(const std::string& dev_id, const
                                   error));
 }
 
+AnycubicPrinterAgent::CloudState AnycubicPrinterAgent::read_cloud_state(AnycubicCloud::Client& client, const std::string& printer_id)
+{
+    // Each part is optional: the page shows what the cloud answered
+    CloudState     state;
+    nlohmann::json data;
+    std::string    error;
+    if (client.printer_info(printer_id, data, error))
+        AnycubicCloud::parse_temperatures(data, state.nozzle_temp, state.bed_temp);
+    if (client.list_projects(data, error))
+        state.job = AnycubicCloud::latest_job(data, printer_id);
+    return state;
+}
+
 void AnycubicPrinterAgent::run_connection(std::string dev_id, std::string token, uint64_t generation)
 {
     auto stale  = [this, generation]() { return generation != m_generation.load(); };
@@ -196,7 +249,7 @@ void AnycubicPrinterAgent::run_connection(std::string dev_id, std::string token,
         device_info.dev_name = printer.name;
     }
     BOOST_LOG_TRIVIAL(info) << "AnycubicPrinterAgent: connected to " << printer.model << " through Anycubic Cloud";
-    dispatch_message(dev_id, status_payload(printer).dump());
+    dispatch_message(dev_id, status_payload(printer, read_cloud_state(*client, printer.id)).dump());
     dispatch_local_connect(ConnectStatusOk, dev_id, "0");
     dispatch_printer_connected(dev_id);
 
@@ -211,8 +264,12 @@ void AnycubicPrinterAgent::run_connection(std::string dev_id, std::string token,
             }
             continue;
         }
-        if (const AnycubicCloud::Printer* current = AnycubicCloud::choose_printer(printers, printer.id); current && !stale())
-            dispatch_message(dev_id, status_payload(*current).dump());
+        const AnycubicCloud::Printer* current = AnycubicCloud::choose_printer(printers, printer.id);
+        if (current == nullptr)
+            continue;
+        const CloudState state = read_cloud_state(*client, current->id);
+        if (!stale())
+            dispatch_message(dev_id, status_payload(*current, state).dump());
     }
 }
 

@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <functional>
 #include <map>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -21,8 +22,8 @@ namespace Slic3r {
 namespace AnycubicCloud {
 
 // Anycubic Slicer Next keeps an access token that must be exchanged for a user token; the Anycubic web site keeps the
-// user token itself. Both are JWTs and cannot be told apart, so the exchange is tried first and the web form is the
-// fallback.
+// user token itself. Both are JWTs and cannot be told apart, so the token is first checked as a web token and the
+// exchange is the fallback.
 enum class TokenKind { slicer, web };
 
 struct Printer
@@ -55,6 +56,21 @@ struct SlotMapping
     std::array<int, 3> ams_color{0, 0, 0};
 };
 
+// A print job as the cloud's project list reports it
+struct Job
+{
+    // Values of print_status
+    enum Status { printing = 1, complete = 2, cancelled = 3, downloading = 4, checking = 5, preheating = 6 };
+
+    std::string name;
+    int         print_status   = 0;
+    bool        paused         = false;
+    int         progress       = -1; // percent, -1 when unknown
+    int         remain_minutes = -1;
+    int         layer          = -1;
+    int         total_layers   = -1;
+};
+
 // ---- Pure helpers, kept separate from the HTTP client so they can be tested without a network ----
 
 std::string md5_hex(const std::string& input);
@@ -80,6 +96,12 @@ std::vector<SlotMapping> slot_mapping_from_ams_mapping_info(const std::string& a
 
 // The body of /work/operation/sendOrder that prints the uploaded cloud file `file_id` on `printer_id`.
 nlohmann::json start_print_order(const std::string& printer_id, int64_t file_id, const std::vector<SlotMapping>& mapping);
+
+// The nozzle and bed temperatures in a /v2/printer/info answer, in degrees; -1 when not reported.
+void parse_temperatures(const nlohmann::json& printer_info, int& nozzle, int& bed);
+
+// The newest job of `printer_id` in a /work/project/getProjects answer.
+std::optional<Job> latest_job(const nlohmann::json& projects, const std::string& printer_id);
 
 // Picks the printer `wanted` names (its name or id), or the only printer of the account when `wanted` names none.
 const Printer* choose_printer(const std::vector<Printer>& printers, const std::string& wanted);
@@ -108,6 +130,9 @@ public:
                      const std::function<bool()>&                  cancelled,
                      int64_t&                                      file_id,
                      std::string&                                  error);
+
+    // The account's newest print jobs, newest first
+    bool list_projects(nlohmann::json& projects, std::string& error);
 
     bool send_order(const nlohmann::json& order, std::string& error);
 

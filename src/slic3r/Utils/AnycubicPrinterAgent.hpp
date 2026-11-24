@@ -10,6 +10,7 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <thread>
 #include <vector>
@@ -43,8 +44,16 @@ public:
 
     bool fetch_filament_info(std::string dev_id, FilamentSyncMode sync_mode = FilamentSyncMode::pull) override;
 
+    // What the cloud reports besides the printer list: temperatures and the newest job
+    struct CloudState
+    {
+        int                               nozzle_temp = -1; // degrees, -1 when unknown
+        int                               bed_temp    = -1;
+        std::optional<AnycubicCloud::Job> job;
+    };
+
     // The status message the device page reads, built from the cloud's view of the printer
-    static nlohmann::json status_payload(const AnycubicCloud::Printer& printer);
+    static nlohmann::json status_payload(const AnycubicCloud::Printer& printer, const CloudState& state);
 
 protected:
     bool upload_gcode(const std::string& local_path,
@@ -59,6 +68,7 @@ protected:
 private:
     // Finds the printer of the account the settings name; empty on failure, with `error` set
     std::string resolve_printer(AnycubicCloud::Client& client, AnycubicCloud::Printer& printer, std::string& error);
+    static CloudState read_cloud_state(AnycubicCloud::Client& client, const std::string& printer_id);
     void        run_connection(std::string dev_id, std::string token, uint64_t generation);
     void        report_token_refused(const std::string& dev_id, const std::string& error, const std::function<bool()>& stale);
     void        stop_connection_thread();

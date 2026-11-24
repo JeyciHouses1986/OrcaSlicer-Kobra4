@@ -30,8 +30,10 @@ placeholder works.
 record and its discovery announcement, the AMS payload the filament sync and the print dialog read, and the print
 flow that extracts the plate's G-code and reports progress. It replaces the transport:
 
-- connecting resolves the printer through the cloud, then polls the cloud every 15 seconds for its state, since
-  the cloud's MQTT stream needs certificates and an encrypted login that this agent does not implement;
+- connecting resolves the printer through the cloud, then polls the cloud every 15 seconds, since the cloud's MQTT
+  stream needs certificates and an encrypted login that this agent does not implement. Each poll reads the printer
+  list (busy or idle), the printer's record (nozzle and bed temperatures) and the account's newest jobs, whose
+  progress, remaining time and layers the device page shows; an idle printer shows how its last job ended;
 - filament sync reads the ACE slots from the printer's cloud record (`multi_color_box`), where a slot whose
   `edit_status` is 2 is empty even though it still reports the last spool it held;
 - an upload reserves cloud storage, puts the file at the pre-signed address it gets back and registers it as a
