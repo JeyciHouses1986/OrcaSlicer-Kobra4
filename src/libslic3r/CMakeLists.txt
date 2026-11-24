@@ -249,6 +249,8 @@ set(lisbslic3r_sources
     GCode/AdaptivePAInterpolator.hpp
     GCode/AdaptivePAProcessor.cpp
     GCode/AdaptivePAProcessor.hpp
+    GCode/AnycubicHeader.cpp
+    GCode/AnycubicHeader.hpp
     GCode/AvoidCrossingPerimeters.cpp
     GCode/AvoidCrossingPerimeters.hpp
     GCode/BeltBackTransform.cpp
