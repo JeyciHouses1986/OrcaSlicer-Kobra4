@@ -120,6 +120,8 @@ protected:
 
     // Build ams JSON and call parser
     void build_ams_payload(int ams_count, int max_lane_index, const std::vector<AmsTrayData>& trays);
+    // The "ams" object of a push_status message, as build_ams_payload parses it
+    nlohmann::json ams_status_json(int ams_count, int max_lane_index, const std::vector<AmsTrayData>& trays) const;
     // Name shown for a filament unit, or empty for the AMS Lite name
     virtual std::string ams_unit_name(int /*ams_id*/) const { return {}; }
 

@@ -605,19 +605,8 @@ int MoonrakerPrinterAgent::set_queue_on_main_fn(QueueOnMainFn fn)
     return BAMBU_NETWORK_SUCCESS;
 }
 
-void MoonrakerPrinterAgent::build_ams_payload(int ams_count, int max_lane_index, const std::vector<AmsTrayData>& trays)
+nlohmann::json MoonrakerPrinterAgent::ams_status_json(int ams_count, int max_lane_index, const std::vector<AmsTrayData>& trays) const
 {
-
-    // Look up MachineObject via DeviceManager
-    auto* dev_manager = GUI::wxGetApp().getDeviceManager();
-    if (!dev_manager) {
-        return;
-    }
-    MachineObject* obj = dev_manager->get_my_machine(device_info.dev_id);
-    if (!obj) {
-        return;
-    }
-
     // Build BBL-format JSON for DevFilaSystemParser::ParseV1_0
     nlohmann::json ams_json = nlohmann::json::object();
     nlohmann::json ams_array = nlohmann::json::array();
@@ -709,9 +698,25 @@ void MoonrakerPrinterAgent::build_ams_payload(int ams_count, int max_lane_index,
     ams_json["ams_exist_bits"] = ams_exist_ss.str();
     ams_json["tray_exist_bits"] = tray_exist_ss.str();
 
+    return ams_json;
+}
+
+void MoonrakerPrinterAgent::build_ams_payload(int ams_count, int max_lane_index, const std::vector<AmsTrayData>& trays)
+{
+
+    // Look up MachineObject via DeviceManager
+    auto* dev_manager = GUI::wxGetApp().getDeviceManager();
+    if (!dev_manager) {
+        return;
+    }
+    MachineObject* obj = dev_manager->get_my_machine(device_info.dev_id);
+    if (!obj) {
+        return;
+    }
+
     // Wrap in the expected structure for ParseV1_0
     nlohmann::json print_json = nlohmann::json::object();
-    print_json["ams"] = ams_json;
+    print_json["ams"] = ams_status_json(ams_count, max_lane_index, trays);
 
     // Call the parser to populate DevFilaSystem
     DevFilaSystemParser::ParseV1_0(print_json, obj, obj->GetFilaSystem().get(), false);

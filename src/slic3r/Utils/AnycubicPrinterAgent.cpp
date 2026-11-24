@@ -224,11 +224,45 @@ AnycubicPrinterAgent::CloudState AnycubicPrinterAgent::read_cloud_state(Anycubic
     CloudState     state;
     nlohmann::json data;
     std::string    error;
-    if (client.printer_info(printer_id, data, error))
+    if (client.printer_info(printer_id, data, error)) {
         AnycubicCloud::parse_temperatures(data, state.nozzle_temp, state.bed_temp);
+        state.ace_slots = AnycubicCloud::parse_ace_slots(data);
+    }
     if (client.list_projects(data, error))
         state.job = AnycubicCloud::latest_job(data, printer_id);
     return state;
+}
+
+std::vector<MoonrakerPrinterAgent::AmsTrayData> AnycubicPrinterAgent::ace_trays(const std::vector<AnycubicCloud::AceSlot>& slots,
+                                                                                int&                                       ace_count)
+{
+    std::vector<AmsTrayData> trays;
+    int                      max_index = 0;
+    for (const AnycubicCloud::AceSlot& slot : slots) {
+        AmsTrayData tray;
+        tray.slot_index   = slot.index;
+        tray.has_filament = slot.loaded;
+        if (slot.loaded) {
+            tray.tray_type     = slot.material_type;
+            tray.tray_color    = AnycubicCloud::hex_from_rgb(slot.rgb);
+            tray.tray_info_idx = map_filament_type_to_generic_id(slot.material_type);
+        }
+        max_index = std::max(max_index, slot.index);
+        trays.push_back(std::move(tray));
+    }
+    ace_count = max_index / 4 + 1;
+    return trays;
+}
+
+nlohmann::json AnycubicPrinterAgent::device_status(const AnycubicCloud::Printer& printer, const CloudState& state) const
+{
+    nlohmann::json payload = status_payload(printer, state);
+    if (!state.ace_slots.empty()) {
+        int        ace_count = 0;
+        const auto trays     = ace_trays(state.ace_slots, ace_count);
+        payload["print"]["ams"] = ams_status_json(ace_count, ace_count * 4 - 1, trays);
+    }
+    return payload;
 }
 
 void AnycubicPrinterAgent::run_connection(std::string dev_id, std::string token, uint64_t generation)
@@ -258,7 +292,7 @@ void AnycubicPrinterAgent::run_connection(std::string dev_id, std::string token,
         device_info.dev_name = printer.name;
     }
     BOOST_LOG_TRIVIAL(info) << "AnycubicPrinterAgent: connected to " << printer.model << " through Anycubic Cloud";
-    dispatch_message(dev_id, status_payload(printer, read_cloud_state(*client, printer.id)).dump());
+    dispatch_message(dev_id, device_status(printer, read_cloud_state(*client, printer.id)).dump());
     dispatch_local_connect(ConnectStatusOk, dev_id, "0");
     dispatch_printer_connected(dev_id);
 
@@ -278,7 +312,7 @@ void AnycubicPrinterAgent::run_connection(std::string dev_id, std::string token,
             continue;
         const CloudState state = read_cloud_state(*client, current->id);
         if (!stale())
-            dispatch_message(dev_id, status_payload(*current, state).dump());
+            dispatch_message(dev_id, device_status(*current, state).dump());
     }
 }
 
@@ -305,21 +339,8 @@ bool AnycubicPrinterAgent::fetch_filament_info(std::string dev_id, FilamentSyncM
     if (slots.empty())
         return false;
 
-    std::vector<AmsTrayData> trays;
-    int                      max_index = 0;
-    for (const AnycubicCloud::AceSlot& slot : slots) {
-        AmsTrayData tray;
-        tray.slot_index   = slot.index;
-        tray.has_filament = slot.loaded;
-        if (slot.loaded) {
-            tray.tray_type     = slot.material_type;
-            tray.tray_color    = AnycubicCloud::hex_from_rgb(slot.rgb);
-            tray.tray_info_idx = map_filament_type_to_generic_id(slot.material_type);
-        }
-        max_index = std::max(max_index, slot.index);
-        trays.push_back(std::move(tray));
-    }
-    const int ace_count = max_index / 4 + 1;
+    int                            ace_count = 0;
+    const std::vector<AmsTrayData> trays     = ace_trays(slots, ace_count);
     build_ams_payload(ace_count, ace_count * 4 - 1, trays);
     return true;
 }
