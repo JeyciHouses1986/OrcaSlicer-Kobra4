@@ -811,6 +811,7 @@ std::string MoonrakerPrinterAgent::map_filament_type_to_generic_id(const std::st
         {"PLA HIGH SPEED", "PLA High Speed"},
         {"PLA-HS", "PLA High Speed"},
         {"PLA HS", "PLA High Speed"},
+        {"PLA GLOW", "PLA"},
 
         // ABS/ASA variants
         {"ABS", "ABS"},
