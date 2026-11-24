@@ -7,9 +7,13 @@
 #include "bambu_networking.hpp"
 #include "libslic3r/PresetBundle.hpp"
 #include "libslic3r/format.hpp"
+#include "libslic3r/Utils.hpp"
 #include "slic3r/GUI/DeviceCore/DevStorage.h"
+#include "slic3r/GUI/GUI.hpp"
 #include "slic3r/GUI/GUI_App.hpp"
 #include "slic3r/GUI/I18N.hpp"
+
+#include <boost/filesystem/path.hpp>
 
 #include <boost/log/trivial.hpp>
 #include <nlohmann/json.hpp>
@@ -17,6 +21,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -113,6 +118,8 @@ nlohmann::json AnycubicPrinterAgent::status_payload(const AnycubicCloud::Printer
     print["sdcard"]             = true;
     print["home_flag"]          = DevStorage::HAS_SDCARD_NORMAL << 8;
     print["support_send_to_sd"] = false;
+    // The printer records it with its camera when the print order asks
+    print["support_timelapse"]  = true;
     print["nozzle_temp_range"]  = {0, 300};
     print["bed_temp_range"]     = {0, 110};
     payload["t_utc"]            = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -317,6 +324,57 @@ bool AnycubicPrinterAgent::fetch_filament_info(std::string dev_id, FilamentSyncM
     return true;
 }
 
+std::string AnycubicPrinterAgent::get_camera_url() const
+{
+    {
+        std::lock_guard<std::mutex> lock(m_cloud_mutex);
+        if (m_printer_id.empty())
+            return {};
+    }
+    // The page asks for its session itself, so the address stays the same from one viewing to the next
+    return GUI::file_url_from_path(boost::filesystem::path(resources_dir()) / "web/anycubic/camera.html").ToUTF8().data();
+}
+
+void AnycubicPrinterAgent::request_camera_session(std::function<void(std::string)> callback)
+{
+    std::shared_ptr<AnycubicCloud::Client> client;
+    std::string                            printer_id;
+    {
+        std::lock_guard<std::mutex> lock(m_cloud_mutex);
+        client     = m_client;
+        printer_id = m_printer_id;
+    }
+    if (!client || printer_id.empty()) {
+        callback({});
+        return;
+    }
+    // The page has no translations of its own, so it gets the words it may show
+    nlohmann::json reply = {
+        {"messages",
+         {{"waiting", _u8L("Waiting for the printer's camera...")},
+          {"ended", _u8L("The camera stream ended. Press play to watch it again.")},
+          {"no_player", _u8L("The camera player could not be loaded. Check the internet connection.")},
+          {"failed", _u8L("Anycubic Cloud did not open the camera.")}}},
+    };
+    // Each viewing needs fresh credentials, and asking for them opens the camera. The thread holds only what it
+    // uses, so it may outlive a disconnect.
+    std::thread([client, printer_id, reply = std::move(reply), callback = std::move(callback)]() mutable {
+        nlohmann::json answer;
+        std::string    error;
+        nlohmann::json session;
+        if (!client->send_order(AnycubicCloud::camera_open_order(printer_id), answer, error))
+            BOOST_LOG_TRIVIAL(warning) << "AnycubicPrinterAgent: opening the camera failed: " << error;
+        else if ((session = AnycubicCloud::camera_session(answer)).is_null())
+            BOOST_LOG_TRIVIAL(warning) << "AnycubicPrinterAgent: Anycubic Cloud opened the camera without Agora credentials";
+
+        if (session.is_null())
+            reply["error"] = true;
+        else
+            reply["session"] = std::move(session);
+        callback(reply.dump());
+    }).detach();
+}
+
 int AnycubicPrinterAgent::start_print(PrintParams params, OnUpdateStatusFn update_fn, WasCancelledFn cancel_fn, OnWaitFn /*wait_fn*/)
 {
     // Every print goes through the cloud, whichever way the dialog sends it
@@ -380,7 +438,8 @@ bool AnycubicPrinterAgent::print_uploaded_file(const PrintParams& params, const 
         return false;
 
     const auto  order = AnycubicCloud::start_print_order(printer_id, file_id,
-                                                         AnycubicCloud::slot_mapping_from_ams_mapping_info(params.ams_mapping_info));
+                                                         AnycubicCloud::slot_mapping_from_ams_mapping_info(params.ams_mapping_info),
+                                                         params.task_record_timelapse);
     std::string error;
     if (!client->send_order(order, error)) {
         BOOST_LOG_TRIVIAL(error) << "AnycubicPrinterAgent: the print order was refused: " << error;

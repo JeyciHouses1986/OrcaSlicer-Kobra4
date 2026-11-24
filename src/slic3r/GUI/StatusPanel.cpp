@@ -2425,7 +2425,7 @@ void StatusPanel::update_camera_state(MachineObject* obj)
 
     auto agent = wxGetApp().getAgent();
     const auto camera_mode = agent ? agent->get_camera_stream_mode() : CameraStreamMode::none;
-    const bool use_webview = camera_mode == CameraStreamMode::http_snapshot;
+    const bool use_webview = camera_mode == CameraStreamMode::http_snapshot || camera_mode == CameraStreamMode::web_page;
     const std::string custom_url = CameraPopup::custom_source_url();
     sync_custom_camera_source(custom_url);
     // With a custom source applied, the WebView shows the user's camera and the switch button owns the view.

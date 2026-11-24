@@ -241,13 +241,13 @@ std::vector<SlotMapping> slot_mapping_from_ams_mapping_info(const std::string& a
     return mapping;
 }
 
-nlohmann::json start_print_order(const std::string& printer_id, int64_t file_id, const std::vector<SlotMapping>& mapping)
+nlohmann::json start_print_order(const std::string& printer_id, int64_t file_id, const std::vector<SlotMapping>& mapping, bool timelapse)
 {
     nlohmann::json data = {
         {"filetype", 0},
         {"file_key", ""},
         {"file_name", ""},
-        {"task_settings", {{"ai_detect", 0}, {"camera_timelapse", 0}}},
+        {"task_settings", {{"ai_detect", 0}, {"camera_timelapse", timelapse ? 1 : 0}}},
         {"file_id", file_id},
         {"hollow_param", nullptr},
         // The cloud file is a temporary one, which the printer removes after printing it
@@ -283,6 +283,30 @@ nlohmann::json start_print_order(const std::string& printer_id, int64_t file_id,
         {"ams_info", ams_info},
         {"settings", nullptr},
     };
+}
+
+nlohmann::json camera_open_order(const std::string& printer_id)
+{
+    return {
+        {"order_id", 1001}, // open the camera
+        {"printer_id", id_value(printer_id)},
+        // Without it the cloud answers with the older credentials the printer no longer streams to
+        {"shengwang_rtc_support", true},
+    };
+}
+
+nlohmann::json camera_session(const nlohmann::json& order_answer)
+{
+    if (!order_answer.is_object() || !order_answer.contains("shengwang") || !order_answer["shengwang"].is_object())
+        return nullptr;
+    const nlohmann::json& agora = order_answer["shengwang"];
+    nlohmann::json        session;
+    for (const char* key : {"appid", "channel", "rtc_token", "client_uid", "encryption_mode", "encryption_key", "encryption_kdf_salt"}) {
+        if (!agora.contains(key) || agora[key].is_null())
+            return nullptr;
+        session[key] = agora[key];
+    }
+    return session;
 }
 
 void parse_temperatures(const nlohmann::json& printer_info, int& nozzle, int& bed)
@@ -499,8 +523,13 @@ bool Client::list_projects(nlohmann::json& projects, std::string& error)
 
 bool Client::send_order(const nlohmann::json& order, std::string& error)
 {
-    nlohmann::json data;
-    return login(error) && request("POST", "/work/operation/sendOrder", order, data, error);
+    nlohmann::json answer;
+    return send_order(order, answer, error);
+}
+
+bool Client::send_order(const nlohmann::json& order, nlohmann::json& answer, std::string& error)
+{
+    return login(error) && request("POST", "/work/operation/sendOrder", order, answer, error);
 }
 
 } // namespace AnycubicCloud

@@ -44,6 +44,11 @@ public:
 
     bool fetch_filament_info(std::string dev_id, FilamentSyncMode sync_mode = FilamentSyncMode::pull) override;
 
+    // The camera streams through Agora's WebRTC service, which only its web SDK speaks: a local page plays it
+    CameraStreamMode get_camera_stream_mode() const override { return CameraStreamMode::web_page; }
+    std::string      get_camera_url() const override;
+    void             request_camera_session(std::function<void(std::string)> callback) override;
+
     // What the cloud reports besides the printer list: temperatures and the newest job
     struct CloudState
     {
@@ -73,7 +78,7 @@ private:
     void        report_token_refused(const std::string& dev_id, const std::string& error, const std::function<bool()>& stale);
     void        stop_connection_thread();
 
-    std::mutex                              m_cloud_mutex; // Guards everything below
+    mutable std::mutex                      m_cloud_mutex; // Guards everything below
     std::shared_ptr<AnycubicCloud::Client>  m_client;
     std::string                             m_printer_id;
     int64_t                                 m_uploaded_file_id = -1;

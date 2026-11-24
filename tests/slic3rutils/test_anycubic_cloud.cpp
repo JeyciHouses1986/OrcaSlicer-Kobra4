@@ -167,6 +167,40 @@ TEST_CASE("The start order prints the uploaded file with the slot mapping", "[An
     CHECK(start_print_order("12", 99, {})["ams_info"].is_null());
 }
 
+TEST_CASE("The start order asks for a timelapse only when the dialog does", "[AnycubicCloud]")
+{
+    CHECK(start_print_order("12", 99, {})["data"]["task_settings"]["camera_timelapse"] == 0);
+    CHECK(start_print_order("12", 99, {}, true)["data"]["task_settings"]["camera_timelapse"] == 1);
+}
+
+TEST_CASE("The camera opens with Agora credentials for one viewing", "[AnycubicCloud]")
+{
+    const auto order = camera_open_order("12");
+    CHECK(order["order_id"] == 1001);
+    CHECK(order["printer_id"] == 12);
+    CHECK(order["shengwang_rtc_support"] == true);
+
+    const auto answer = nlohmann::json::parse(R"({
+        "msgid": "m",
+        "shengwang": {"appid": "a", "channel": "c", "rtc_token": "t", "client_uid": 7,
+                      "encryption_mode": "AES_128_GCM2", "encryption_key": "k", "encryption_kdf_salt": "c2FsdA=="},
+        "shengwang_device": {"uid": 8}
+    })");
+    const auto session = camera_session(answer);
+    REQUIRE(session.is_object());
+    CHECK(session["channel"] == "c");
+    CHECK(session["client_uid"] == 7);
+    CHECK(session["encryption_mode"] == "AES_128_GCM2");
+    CHECK(!session.contains("msgid"));
+
+    // Another transport, or credentials missing a part, cannot be played
+    CHECK(camera_session(nlohmann::json::parse(R"({"token": {"tmpSecretId": "x"}})")).is_null());
+    auto partial = answer;
+    partial["shengwang"].erase("rtc_token");
+    CHECK(camera_session(partial).is_null());
+    CHECK(camera_session(nullptr).is_null());
+}
+
 TEST_CASE("Temperatures are read from the printer's parameters", "[AnycubicCloud]")
 {
     int nozzle = 0, bed = 0;

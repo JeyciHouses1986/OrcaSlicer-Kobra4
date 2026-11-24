@@ -39,7 +39,13 @@ flow that extracts the plate's G-code and reports progress. It replaces the tran
 - an upload reserves cloud storage, puts the file at the pre-signed address it gets back and registers it as a
   temporary file, which the printer deletes once printed;
 - the print starts with a cloud order whose `ams_box_mapping` pairs each project filament with the ACE slot chosen
-  in the print dialog.
+  in the print dialog, and which asks the printer to record a timelapse when the dialog's option is set;
+- the camera streams through Agora's WebRTC service, which only Agora's web SDK speaks, so the agent's camera mode is
+  `web_page`: the device page loads `resources/web/anycubic/camera.html` in its web view, the page asks for a session
+  (`request_camera_session`), and the agent sends the cloud's camera order, whose answer carries the channel, token and
+  encryption settings of one viewing. Each viewing needs fresh ones, which is why the page asks rather than the
+  address carrying them. The page loads the MIT-licensed SDK from a CDN, and gets the few words it shows from the
+  agent, already translated.
 
 Printer control from the device page (pause, temperatures, moves) is refused as unsupported rather than ignored.
 
@@ -54,4 +60,5 @@ header lines of the G-code, which `GCode/AnycubicHeader` writes.
 - [`AnycubicPrinterAgent`](../../src/slic3r/Utils/AnycubicPrinterAgent.hpp) — the agent
 - [`AnycubicCloud`](../../src/slic3r/Utils/AnycubicCloud.hpp) — cloud client and helpers
 - [`AnycubicLoginDialog`](../../src/slic3r/GUI/AnycubicLoginDialog.hpp) — login in an embedded browser
+- [`camera.html`](../../resources/web/anycubic/camera.html) — the camera player
 - [`AnycubicHeader`](../../src/libslic3r/GCode/AnycubicHeader.hpp) — ACE header lines in the G-code

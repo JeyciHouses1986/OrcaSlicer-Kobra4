@@ -94,8 +94,17 @@ std::string        hex_from_rgb(const std::array<int, 3>& rgb);
 // and "sourceColor"/"targetColor"/"filamentType") into the order's slot mapping. Filaments without a tray are left out.
 std::vector<SlotMapping> slot_mapping_from_ams_mapping_info(const std::string& ams_mapping_info);
 
-// The body of /work/operation/sendOrder that prints the uploaded cloud file `file_id` on `printer_id`.
-nlohmann::json start_print_order(const std::string& printer_id, int64_t file_id, const std::vector<SlotMapping>& mapping);
+// The body of /work/operation/sendOrder that prints the uploaded cloud file `file_id` on `printer_id`, recording a
+// timelapse with the printer's camera when `timelapse` is set.
+nlohmann::json start_print_order(const std::string& printer_id, int64_t file_id, const std::vector<SlotMapping>& mapping,
+                                 bool timelapse = false);
+
+// The body of /work/operation/sendOrder that opens the printer's camera for one viewing session
+nlohmann::json camera_open_order(const std::string& printer_id);
+
+// The Agora ("shengwang") credentials of one viewing session in the answer to camera_open_order(), as the camera
+// page wants them; null when the answer has none, as when the account's camera goes through another transport.
+nlohmann::json camera_session(const nlohmann::json& order_answer);
 
 // The nozzle and bed temperatures in a /v2/printer/info answer, in degrees; -1 when not reported.
 void parse_temperatures(const nlohmann::json& printer_info, int& nozzle, int& bed);
@@ -135,6 +144,7 @@ public:
     bool list_projects(nlohmann::json& projects, std::string& error);
 
     bool send_order(const nlohmann::json& order, std::string& error);
+    bool send_order(const nlohmann::json& order, nlohmann::json& answer, std::string& error);
 
 private:
     bool request(const std::string& method, const std::string& endpoint, const nlohmann::json& body, nlohmann::json& data, std::string& error);

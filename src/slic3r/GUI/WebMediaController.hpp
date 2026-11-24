@@ -24,6 +24,9 @@ public:
     void Stop() override;
 
 private:
+    // A web_page camera asks for its session through window.wx.postMessage
+    void on_script_message(const wxString& message);
+
     wxWebView* m_webview = nullptr;
     std::string m_url;
     CameraStreamMode m_stream_mode = CameraStreamMode::http;
