@@ -1,6 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <array>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -282,4 +283,41 @@ TEST_CASE("The device page shows the job, its progress and the temperatures", "[
     printer.is_printing     = 1;
     state.job->print_status = Job::complete;
     CHECK(AnycubicPrinterAgent::status_payload(printer, state)["print"]["gcode_state"] == "FINISH");
+}
+
+TEST_CASE("A print order waits while the cloud reads the uploaded file", "[AnycubicCloud]")
+{
+    CHECK(file_not_ready("No slicer found"));
+    CHECK(file_not_ready("No file found"));
+    CHECK(!file_not_ready("Login information has expired. Please login again."));
+}
+
+TEST_CASE("The statistics block is built from Orca's stats", "[AnycubicCloud]")
+{
+    std::istringstream gcode("; HEADER_BLOCK_START\n"
+                             "; max_z_height: 12.40\n"
+                             "; HEADER_BLOCK_END\n"
+                             "M83\n"
+                             "G1 X5 Y5 E2 ; purge line\n"
+                             "G0 X100 Y100\n"
+                             "G1 X110 Y120 E0.5\n"
+                             "G1 X130 E0.5\n"
+                             "G1 X200 Y200\n"
+                             "G1 E-0.8\n"
+                             "; total filament used [g] = 87.70\r\n"
+                             "; total layers count = 62\n"
+                             "; estimated printing time (normal mode) = 2h 47m 3s\n");
+    const std::string block = statistics_block(gcode);
+    CHECK(block.find("; statistics = begin\n") != std::string::npos);
+    CHECK(block.find("; used_filament = 87.70\n") != std::string::npos);
+    CHECK(block.find("; print_time = 2h 47m 3s\n") != std::string::npos);
+    CHECK(block.find("; model_size = 125.00,115.00,12.40\n") != std::string::npos);
+    CHECK(block.find("; total_layers = 62\n") != std::string::npos);
+    CHECK(block.find("; statistics = end\n") != std::string::npos);
+
+    // Slicer Next's own G-code, and one without stats, are left alone
+    std::istringstream slicer_next("; estimated printing time (normal mode) = 1h\n; statistics = begin\n");
+    CHECK(statistics_block(slicer_next).empty());
+    std::istringstream no_stats("G1 X1 E1\n");
+    CHECK(statistics_block(no_stats).empty());
 }

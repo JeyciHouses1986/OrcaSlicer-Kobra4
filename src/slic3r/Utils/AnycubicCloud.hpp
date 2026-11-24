@@ -3,6 +3,7 @@
 #include <array>
 #include <cstdint>
 #include <functional>
+#include <istream>
 #include <map>
 #include <optional>
 #include <string>
@@ -111,6 +112,13 @@ void parse_temperatures(const nlohmann::json& printer_info, int& nozzle, int& be
 
 // The newest job of `printer_id` in a /work/project/getProjects answer.
 std::optional<Job> latest_job(const nlohmann::json& projects, const std::string& printer_id);
+
+// Whether a refused print order only means the cloud has not read the uploaded file yet, which takes some seconds
+bool file_not_ready(const std::string& order_error);
+
+// The statistics block Anycubic Slicer Next ends its G-code with, from which the cloud reads the print time and
+// model size it shows: built from the stats Orca writes, and empty when the G-code has one already.
+std::string statistics_block(std::istream& gcode);
 
 // Picks the printer `wanted` names (its name or id), or the only printer of the account when `wanted` names none.
 const Printer* choose_printer(const std::vector<Printer>& printers, const std::string& wanted);

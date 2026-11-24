@@ -37,7 +37,10 @@ flow that extracts the plate's G-code and reports progress. It replaces the tran
 - filament sync reads the ACE slots from the printer's cloud record (`multi_color_box`), where a slot whose
   `edit_status` is 2 is empty even though it still reports the last spool it held;
 - an upload reserves cloud storage, puts the file at the pre-signed address it gets back and registers it as a
-  temporary file, which the printer deletes once printed;
+  temporary file, which the printer deletes once printed. The uploaded copy ends with the statistics block of Slicer
+  Next's G-code, built from Orca's stats, since the cloud reads the print time and model size from it;
+- the cloud takes some seconds to read an uploaded file, and refuses a print order for it meanwhile ("No slicer
+  found"), so the order is retried until the cloud has read it;
 - the print starts with a cloud order whose `ams_box_mapping` pairs each project filament with the ACE slot chosen
   in the print dialog, and which asks the printer to record a timelapse when the dialog's option is set;
 - the camera streams through Agora's WebRTC service, which only Agora's web SDK speaks, so the agent's camera mode is

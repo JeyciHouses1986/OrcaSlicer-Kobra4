@@ -87,6 +87,7 @@ private:
     std::shared_ptr<AnycubicCloud::Client>  m_client;
     std::string                             m_printer_id;
     int64_t                                 m_uploaded_file_id = -1;
+    WasCancelledFn                          m_upload_cancelled; // The print job's, kept for the print order
 
     std::atomic<uint64_t> m_generation{0};
     std::thread           m_thread;

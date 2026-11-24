@@ -16,6 +16,11 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
+#include <istream>
+#include <limits>
+#include <sstream>
+#include <string>
 #include <utility>
 
 namespace Slic3r {
@@ -283,6 +288,90 @@ nlohmann::json start_print_order(const std::string& printer_id, int64_t file_id,
         {"ams_info", ams_info},
         {"settings", nullptr},
     };
+}
+
+bool file_not_ready(const std::string& order_error)
+{
+    // The cloud's own wording: there is no code that tells these apart from other refusals
+    return order_error == "No slicer found" || order_error == "No file found";
+}
+
+std::string statistics_block(std::istream& gcode)
+{
+    const auto value_after = [](const std::string& line, const char* prefix, std::string& value) {
+        const size_t n = std::strlen(prefix);
+        if (line.compare(0, n, prefix) != 0)
+            return false;
+        value = line.substr(n);
+        while (!value.empty() && (value.back() == '\r' || value.back() == ' '))
+            value.pop_back();
+        return true;
+    };
+    // The axis value of a G0/G1 word such as X12.5, or NaN
+    const auto axis = [](const std::string& line, char letter) {
+        for (size_t i = 3; i < line.size(); ++i) {
+            if (line[i] == ';')
+                break;
+            if (line[i] == letter && line[i - 1] == ' ')
+                return std::strtod(line.c_str() + i + 1, nullptr);
+        }
+        return std::numeric_limits<double>::quiet_NaN();
+    };
+
+    std::string print_time, layers, filament, max_z, value;
+    double      min_x = 1e9, max_x = -1e9, min_y = 1e9, max_y = -1e9;
+    double      x = 0, y = 0;
+    bool        absolute_e = false;
+    std::string line;
+    while (std::getline(gcode, line)) {
+        if (line.empty())
+            continue;
+        if (line[0] == ';') {
+            if (line.compare(0, 20, "; statistics = begin") == 0)
+                return {};
+            if (value_after(line, "; estimated printing time (normal mode) = ", value))
+                print_time = value;
+            else if (value_after(line, "; total layers count = ", value))
+                layers = value;
+            else if (value_after(line, "; total filament used [g] = ", value))
+                filament = value;
+            else if (value_after(line, "; max_z_height: ", value))
+                max_z = value;
+            continue;
+        }
+        if (line.compare(0, 3, "M82") == 0)
+            absolute_e = true;
+        else if (line.compare(0, 3, "M83") == 0)
+            absolute_e = false;
+        if (line.compare(0, 3, "G1 ") != 0 && line.compare(0, 3, "G0 ") != 0)
+            continue;
+        const double nx = axis(line, 'X'), ny = axis(line, 'Y'), e = axis(line, 'E');
+        if (!std::isnan(nx))
+            x = nx;
+        if (!std::isnan(ny))
+            y = ny;
+        // The footprint is where it extrudes, a purge line included; travel does not count
+        if (!absolute_e && !std::isnan(e) && e > 0 && (!std::isnan(nx) || !std::isnan(ny))) {
+            min_x = std::min(min_x, x), max_x = std::max(max_x, x);
+            min_y = std::min(min_y, y), max_y = std::max(max_y, y);
+        }
+    }
+    if (print_time.empty())
+        return {};
+
+    std::ostringstream out;
+    out.setf(std::ios::fixed);
+    out.precision(2);
+    out << "\n; statistics = begin\n";
+    if (!filament.empty())
+        out << "; used_filament = " << filament << "\n";
+    out << "; print_time = " << print_time << "\n";
+    if (max_x >= min_x)
+        out << "; model_size = " << max_x - min_x << "," << max_y - min_y << "," << (max_z.empty() ? "0" : max_z) << "\n";
+    if (!layers.empty())
+        out << "; total_layers = " << layers << "\n";
+    out << "; statistics = end\n";
+    return out.str();
 }
 
 nlohmann::json camera_open_order(const std::string& printer_id)

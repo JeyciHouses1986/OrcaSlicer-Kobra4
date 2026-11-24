@@ -13,7 +13,9 @@
 #include "slic3r/GUI/GUI_App.hpp"
 #include "slic3r/GUI/I18N.hpp"
 
+#include <boost/filesystem/operations.hpp>
 #include <boost/filesystem/path.hpp>
+#include <boost/nowide/fstream.hpp>
 
 #include <boost/log/trivial.hpp>
 #include <nlohmann/json.hpp>
@@ -38,6 +40,9 @@ const std::string AnycubicPrinterAgent_VERSION = "0.1.0";
 // The cloud's view of the printer changes slowly, and the account is rate limited
 constexpr std::chrono::seconds status_poll_interval{15};
 constexpr std::chrono::seconds first_retry_delay{2};
+// The cloud reads an uploaded file before it can be printed, which takes a few seconds
+constexpr std::chrono::seconds file_read_poll{3};
+constexpr int                  file_read_attempts = 40;
 
 // Sleeps in short steps, so a disconnect does not wait out the delay. Returns false once `stale` is true.
 template<typename Stale> bool wait_unless(std::chrono::milliseconds delay, Stale stale)
@@ -425,15 +430,39 @@ bool AnycubicPrinterAgent::upload_gcode(const std::string& local_path,
         return false;
     }
 
+    // The cloud reads the print time and model size from Slicer Next's statistics block, which Orca does not write:
+    // the upload is a copy with one added
+    std::string upload_path = local_path;
+    {
+        boost::nowide::ifstream in(local_path, std::ios::binary);
+        const std::string       block = in ? AnycubicCloud::statistics_block(in) : std::string();
+        if (!block.empty()) {
+            const auto copy = boost::filesystem::temp_directory_path() / boost::filesystem::unique_path("orca-anycubic-%%%%%%%%.gcode");
+            boost::system::error_code ec;
+            boost::filesystem::copy_file(local_path, copy, ec);
+            boost::nowide::ofstream out(copy.string(), std::ios::binary | std::ios::app);
+            if (!ec && out && (out << block)) {
+                upload_path = copy.string();
+            } else {
+                BOOST_LOG_TRIVIAL(warning) << "AnycubicPrinterAgent: could not add the statistics block; uploading the G-code as it is";
+                boost::filesystem::remove(copy, ec);
+            }
+        }
+    }
+
     int64_t     file_id = -1;
     std::string error;
     const bool  ok = client->upload_file(
-        local_path, filename,
+        upload_path, filename,
         [&update_fn](int percent) {
             if (update_fn)
                 update_fn(PrintingStageUpload, percent, _u8L("Uploading..."));
         },
         cancel_fn, file_id, error);
+    if (upload_path != local_path) {
+        boost::system::error_code ec;
+        boost::filesystem::remove(upload_path, ec);
+    }
     if (!ok) {
         BOOST_LOG_TRIVIAL(error) << "AnycubicPrinterAgent: upload to Anycubic Cloud failed: " << error;
         return false;
@@ -441,6 +470,7 @@ bool AnycubicPrinterAgent::upload_gcode(const std::string& local_path,
 
     std::lock_guard<std::mutex> lock(m_cloud_mutex);
     m_uploaded_file_id = file_id;
+    m_upload_cancelled = cancel_fn;
     return true;
 }
 
@@ -461,10 +491,20 @@ bool AnycubicPrinterAgent::print_uploaded_file(const PrintParams& params, const 
     const auto  order = AnycubicCloud::start_print_order(printer_id, file_id,
                                                          AnycubicCloud::slot_mapping_from_ams_mapping_info(params.ams_mapping_info),
                                                          params.task_record_timelapse);
+    WasCancelledFn cancelled;
+    {
+        std::lock_guard<std::mutex> lock(m_cloud_mutex);
+        cancelled = m_upload_cancelled;
+    }
     std::string error;
-    if (!client->send_order(order, error)) {
-        BOOST_LOG_TRIVIAL(error) << "AnycubicPrinterAgent: the print order was refused: " << error;
-        return false;
+    for (int attempt = 1; !client->send_order(order, error); ++attempt) {
+        if (!AnycubicCloud::file_not_ready(error) || attempt == file_read_attempts) {
+            BOOST_LOG_TRIVIAL(error) << "AnycubicPrinterAgent: the print order was refused: " << error;
+            return false;
+        }
+        BOOST_LOG_TRIVIAL(info) << "AnycubicPrinterAgent: Anycubic Cloud is still reading the file (" << error << "), retrying";
+        if (!wait_unless(file_read_poll, [&cancelled]() { return cancelled && cancelled(); }))
+            return false;
     }
     return true;
 }
