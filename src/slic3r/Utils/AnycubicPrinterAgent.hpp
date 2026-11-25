@@ -88,6 +88,7 @@ private:
     // The cloud order a device page command stands for, or null when the cloud has none
     nlohmann::json order_for_command(const nlohmann::json& print) const;
     void           send_order_async(nlohmann::json order);
+    void           send_orders_async(std::vector<nlohmann::json> orders);
 
     mutable std::mutex                      m_cloud_mutex; // Guards everything below
     std::shared_ptr<AnycubicCloud::Client>  m_client;
