@@ -920,6 +920,13 @@ void AMSMaterialsSetting::on_select_ok(wxCommandEvent &event)
     wxString k_text = m_input_k_val->GetTextCtrl()->GetValue();
     wxString n_text = m_input_n_val->GetTextCtrl()->GetValue();
 
+    // Orca: a printer that reports no K value (such as the Anycubic ACE) gets the K panel hidden and empty.
+    // There is nothing to check or send, and a warning about a field the user cannot see would keep the dialog open.
+    if (!m_panel_kn->IsShown() && k_text.IsEmpty()) {
+        Close();
+        return;
+    }
+
     if (obj->cali_version <= -1 && (obj->get_printer_series() != PrinterSeries::SERIES_X1) && !ExtrusionCalibration::check_k_validation(k_text)) {
         wxString k_tips = wxString::Format(_L("Please input a valid value (K in %.1f~%.1f)"), MIN_PA_K_VALUE, MAX_PA_K_VALUE);
         wxString kn_tips = wxString::Format(_L("Please input a valid value (K in %.1f~%.1f, N in %.1f~%.1f)"), MIN_PA_K_VALUE, MAX_PA_K_VALUE, 0.6, 2.0);
@@ -1334,7 +1341,7 @@ void AMSMaterialsSetting::Popup(wxString filament, wxString sn, wxString temp_mi
     if (preset_bundle) {
         BOOST_LOG_TRIVIAL(trace) << "system_preset_bundle filament number=" << preset_bundle->filaments.size();
         for (Preset *filament_it : preset_bundle->get_filament_presets_for_machine(
-                 DevPrinterConfigUtil::get_printer_display_name(obj->printer_type), nozzle_diameter_str, obj->is_support_user_preset)) {
+                 DevPrinterConfigUtil::get_printer_model_name(obj->printer_type), nozzle_diameter_str, obj->is_support_user_preset)) {
             if (!filament_id_set.insert(filament_it->filament_id).second)
                 continue;
             const std::string alias = preset_bundle->filaments.get_preset_alias(*filament_it, true);
@@ -1566,7 +1573,7 @@ int AMSMaterialsSetting::get_filament_variant_index(const Preset &filament, cons
     if (!obj || !preset_bundle)
         return 0;
     const std::set<std::string> printer_names =
-        preset_bundle->get_printer_names_by_printer_type_and_nozzle(DevPrinterConfigUtil::get_printer_display_name(obj->printer_type), nozzle_diameter_str);
+        preset_bundle->get_printer_names_by_printer_type_and_nozzle(DevPrinterConfigUtil::get_printer_model_name(obj->printer_type), nozzle_diameter_str);
     const Preset *printer = printer_names.empty() ? nullptr : preset_bundle->printers.find_preset(*printer_names.begin());
     if (!printer)
         return 0;
@@ -1605,7 +1612,7 @@ void AMSMaterialsSetting::on_select_filament(wxCommandEvent &evt)
         if (selected_info) {
             const std::string& filament_id = selected_info->filament_id;
             for (Preset *it : preset_bundle->get_filament_presets_for_machine(
-                     DevPrinterConfigUtil::get_printer_display_name(obj->printer_type), nozzle_diameter_str, obj->is_support_user_preset)) {
+                     DevPrinterConfigUtil::get_printer_model_name(obj->printer_type), nozzle_diameter_str, obj->is_support_user_preset)) {
                 if (it->filament_id != filament_id)
                     continue;
                 // ) if nozzle_temperature_range is found

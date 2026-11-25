@@ -121,6 +121,9 @@ nlohmann::json job_order(const std::string& printer_id, const std::string& proje
 
 // Starts drying in ACE unit `box_id` at `temp` degrees for `minutes`, or stops it when `minutes` is 0
 nlohmann::json ace_drying_order(const std::string& printer_id, int box_id, int temp, int minutes);
+// Sets the material and colour of slot `slot` (0-3) of ACE unit `box_id`, as the printer's screen does
+nlohmann::json ace_slot_order(const std::string& printer_id, int box_id, int slot, const std::string& material_type,
+                              const std::array<int, 3>& rgb);
 
 // Printer-level orders, which work with or without a running job, as Slicer Next sends them.
 // Sets the nozzle and/or bed target temperature; a negative value leaves that one alone.

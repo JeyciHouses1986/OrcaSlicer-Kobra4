@@ -431,6 +431,19 @@ nlohmann::json ace_drying_order(const std::string& printer_id, int box_id, int t
     };
 }
 
+nlohmann::json ace_slot_order(const std::string& printer_id, int box_id, int slot, const std::string& material_type,
+                              const std::array<int, 3>& rgb)
+{
+    return {
+        {"order_id", 1211},
+        {"printer_id", id_value(printer_id)},
+        {"project_id", 0},
+        {"data",
+         {{"multi_color_box",
+           {{{"id", box_id}, {"slots", {{{"index", slot}, {"type", material_type}, {"color", {rgb[0], rgb[1], rgb[2]}}}}}}}}}},
+    };
+}
+
 namespace {
 // An order on the printer itself. Slicer Next sends these with the order id as text and without a project id; the
 // cloud acknowledges other forms but the printer ignores them. The ids and payloads follow anycubic-cloud-api (GPL-3.0+).

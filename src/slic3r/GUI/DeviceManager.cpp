@@ -5859,7 +5859,7 @@ void MachineObject::update_printer_preset_name()
     BOOST_LOG_TRIVIAL(info) << __FUNCTION__ << " " << __LINE__ << "start update preset_name";
     PresetBundle *     preset_bundle = Slic3r::GUI::wxGetApp().preset_bundle;
     if (!preset_bundle) return;
-    auto               printer_model = DevPrinterConfigUtil::get_printer_display_name(this->printer_type);
+    auto               printer_model = DevPrinterConfigUtil::get_printer_model_name(this->printer_type);
     std::set<std::string> diameter_set;
     for (auto &nozzle : m_extder_system->m_extders) {
         float diameter = nozzle.GetNozzleDiameter();
@@ -5905,7 +5905,7 @@ void MachineObject::check_ams_filament_valid()
                 return true;
         return false;
     };
-    auto printer_model = DevPrinterConfigUtil::get_printer_display_name(this->printer_type);
+    auto printer_model = DevPrinterConfigUtil::get_printer_model_name(this->printer_type);
     std::map<std::string, std::set<std::string>> need_checked_filament_id;
     for (auto &ams_pair : m_fila_system->GetAmsList()) {
         auto ams_id = ams_pair.first;
@@ -6017,7 +6017,7 @@ void MachineObject::check_ams_filament_valid()
                     std::ostringstream stream;
                     stream << std::fixed << std::setprecision(1) << m_extder_system->GetNozzleDiameter(MAIN_EXTRUDER_ID);
                     std::string nozzle_diameter_str = stream.str();
-                    bool        is_equation = preset_bundle->check_filament_temp_equation_by_printer_type_and_nozzle_for_mas_tray(DevPrinterConfigUtil::get_printer_display_name(
+                    bool        is_equation = preset_bundle->check_filament_temp_equation_by_printer_type_and_nozzle_for_mas_tray(DevPrinterConfigUtil::get_printer_model_name(
                                                                                                                                this->printer_type),
                                                                                                                            nozzle_diameter_str, vt_tray.setting_id,
                                                                                                                            vt_tray.tag_uid, vt_tray.nozzle_temp_min,
