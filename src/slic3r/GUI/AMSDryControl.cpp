@@ -1635,11 +1635,7 @@ int AMSDryCtrWin::update_filament_list(DevAms* dev_ams, MachineObject* obj)
         stream << std::fixed << std::setprecision(1) << obj->GetExtderSystem()->GetNozzleDiameter(extruder_id);
         std::string nozzle_diameter_str = stream.str();
 
-        // Printers connected through a printer agent have no device config, and their printer_type is already the
-        // preset's printer_model
-        std::string printer_model = DevPrinterConfigUtil::get_printer_display_name(obj->printer_type);
-        if (printer_model.empty())
-            printer_model = obj->printer_type;
+        const std::string printer_model = DevPrinterConfigUtil::get_printer_model_name(obj->printer_type);
         for (Preset *filament_it : preset_bundle->get_filament_presets_for_machine(printer_model, nozzle_diameter_str,
                                                                                    obj->is_support_user_preset)) {
             if (!filament_id_set.insert(filament_it->filament_id).second)
