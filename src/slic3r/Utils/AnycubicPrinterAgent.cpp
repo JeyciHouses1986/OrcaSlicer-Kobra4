@@ -139,7 +139,9 @@ nlohmann::json AnycubicPrinterAgent::status_payload(const AnycubicCloud::Printer
 int AnycubicPrinterAgent::send_message(std::string dev_id, std::string json_str, int qos, int flag)
 {
     const auto json = nlohmann::json::parse(json_str, nullptr, false);
-    // The device page switches the light once per light node; the two nodes stand for the two light types printers use
+    // The device page switches the light once per light node. Printers report which light type they have only over
+    // MQTT, which the agent does not use, so the first node switches both types (the Kobra S1 uses 2, older models 1)
+    // and the second node is answered without an order.
     if (json.is_object() && json.contains("system") && json["system"].is_object() &&
         json["system"].value("command", std::string()) == "ledctrl") {
         const std::string node = json["system"].value("led_node", std::string());
@@ -152,7 +154,8 @@ int AnycubicPrinterAgent::send_message(std::string dev_id, std::string json_str,
         }
         if (printer_id.empty() || (node != "chamber_light" && node != "chamber_light2"))
             return ORCA_NETWORK_ERR_CMD_NOT_SUPPORTED;
-        send_order_async(AnycubicCloud::light_order(printer_id, node == "chamber_light" ? 1 : 2, on));
+        if (node == "chamber_light")
+            send_orders_async({AnycubicCloud::light_order(printer_id, 2, on), AnycubicCloud::light_order(printer_id, 1, on)});
         return BAMBU_NETWORK_SUCCESS;
     }
     // Version and access code are answered from what the agent already holds
@@ -218,6 +221,11 @@ nlohmann::json AnycubicPrinterAgent::order_for_command(const nlohmann::json& pri
 
 void AnycubicPrinterAgent::send_order_async(nlohmann::json order)
 {
+    send_orders_async({std::move(order)});
+}
+
+void AnycubicPrinterAgent::send_orders_async(std::vector<nlohmann::json> orders)
+{
     std::shared_ptr<AnycubicCloud::Client> client;
     {
         std::lock_guard<std::mutex> lock(m_cloud_mutex);
@@ -225,11 +233,20 @@ void AnycubicPrinterAgent::send_order_async(nlohmann::json order)
     }
     if (!client)
         return;
-    // The device page's command must not wait for the cloud; the next poll shows the result
-    std::thread([client, order = std::move(order)]() {
-        std::string error;
-        if (!client->send_order(order, error))
-            BOOST_LOG_TRIVIAL(warning) << "AnycubicPrinterAgent: order " << order.value("order_id", 0) << " was refused: " << error;
+    // The device page's command must not wait for the cloud; the next poll shows the result.
+    // Orders go one after another: the printer drops an order that arrives while it handles the previous one.
+    std::thread([client, orders = std::move(orders)]() {
+        for (size_t i = 0; i < orders.size(); ++i) {
+            if (i > 0)
+                std::this_thread::sleep_for(std::chrono::seconds(1));
+            const nlohmann::json& order = orders[i];
+            nlohmann::json        answer;
+            std::string           error;
+            if (client->send_order(order, answer, error))
+                BOOST_LOG_TRIVIAL(info) << "AnycubicPrinterAgent: order " << order.dump() << " answered " << answer.dump();
+            else
+                BOOST_LOG_TRIVIAL(warning) << "AnycubicPrinterAgent: order " << order.dump() << " was refused: " << error;
+        }
     }).detach();
 }
 
