@@ -6,6 +6,8 @@
 #include "NetworkAgentFactory.hpp"
 #include "bambu_networking.hpp"
 #include "libslic3r/AppConfig.hpp"
+#include "libslic3r/CommonDefs.hpp"
+#include "libslic3r/Config.hpp"
 #include "libslic3r/PresetBundle.hpp"
 #include "libslic3r/PrintConfig.hpp"
 #include "libslic3r/format.hpp"
@@ -30,6 +32,7 @@
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <functional>
 #include <map>
 #include <memory>
