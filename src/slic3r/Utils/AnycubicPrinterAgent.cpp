@@ -147,9 +147,8 @@ nlohmann::json AnycubicPrinterAgent::status_payload(const AnycubicCloud::Printer
 int AnycubicPrinterAgent::send_message(std::string dev_id, std::string json_str, int qos, int flag)
 {
     const auto json = nlohmann::json::parse(json_str, nullptr, false);
-    // The device page switches the light once per light node. Printers report which light type they have only over
-    // MQTT, which the agent does not use, so the first node switches both types (the Kobra S1 uses 2, older models 1)
-    // and the second node is answered without an order.
+    // The device page switches the light once per light node. The Kobra 4 reports its light as type 3 (the Kobra S1
+    // uses 2, older models 1), so the first node sends that order and the second is answered without one.
     if (json.is_object() && json.contains("system") && json["system"].is_object() &&
         json["system"].value("command", std::string()) == "ledctrl") {
         const std::string node = json["system"].value("led_node", std::string());
@@ -163,7 +162,7 @@ int AnycubicPrinterAgent::send_message(std::string dev_id, std::string json_str,
         if (printer_id.empty() || (node != "chamber_light" && node != "chamber_light2"))
             return ORCA_NETWORK_ERR_CMD_NOT_SUPPORTED;
         if (node == "chamber_light")
-            send_orders_async({AnycubicCloud::light_order(printer_id, 2, on), AnycubicCloud::light_order(printer_id, 1, on)});
+            send_order_async(AnycubicCloud::light_order(printer_id, 3, on));
         return BAMBU_NETWORK_SUCCESS;
     }
     // Version and access code are answered from what the agent already holds
