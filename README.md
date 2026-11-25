@@ -10,7 +10,7 @@ This fork lets OrcaSlicer slice for the **Anycubic Kobra 4** with the **ACE 2 Pr
 - **Kobra 4 profiles** for the 0.25, 0.4, 0.6 and 0.8 mm nozzles, with their process and filament presets.
 - **The ACE header** that the Kobra 4 firmware reads from the G-code, so it knows which ACE slot feeds each filament.
 - **Cloud printing**: the print dialog uploads the G-code to your Anycubic account and starts it on the printer, with the filament-to-ACE-slot mapping you choose and an optional timelapse.
-- **Device page**: the printer's state, job progress, layers, remaining time and temperatures; the filament loaded in each ACE slot; and the printer's camera.
+- **Device page**: the printer's state, job progress, layers, remaining time and temperatures; the filament loaded in each ACE slot, which you can change (material, colour and preset) and sync to the Prepare page; and the printer's camera.
 - **Printer control**: bed and nozzle temperature, fan speed, the light, axis moves and homing at any time; pause, resume and stop while a job runs.
 - **ACE 2 Pro dryer**: humidity is shown for each unit and drying can be started or stopped from the device page.
 
@@ -33,7 +33,9 @@ This fork lets OrcaSlicer slice for the **Anycubic Kobra 4** with the **ACE 2 Pr
 
 ## Downloads
 
-There are no releases yet. Builds for Windows and Linux are produced by the [Build all](../../actions/workflows/build_all.yml) workflow and can be downloaded from the *Artifacts* of a successful run (a GitHub account is needed to download them).
+Download the Windows installer or portable build from the [latest release](../../releases/latest). No GitHub account is needed.
+
+Builds of every change, including Linux, are produced by the [Build all](../../actions/workflows/build_all.yml) workflow and can be downloaded from the *Artifacts* of a successful run (a GitHub account is needed to download them).
 
 ## Installing on Windows
 
