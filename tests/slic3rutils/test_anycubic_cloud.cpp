@@ -367,6 +367,16 @@ TEST_CASE("The ACE dryer starts with a temperature and time, and stops with no t
     CHECK(stop["data"]["multi_color_box"][0]["drying_status"]["status"] == 0);
 }
 
+TEST_CASE("An ACE slot is given a material and colour", "[AnycubicCloud]")
+{
+    const auto order = ace_slot_order("12", 1, 3, "PETG", {117, 120, 123});
+    CHECK(order["order_id"] == 1211);
+    CHECK(order["project_id"] == 0);
+    const auto& box = order["data"]["multi_color_box"][0];
+    CHECK(box["id"] == 1);
+    CHECK(box["slots"] == nlohmann::json::array({{{"index", 3}, {"type", "PETG"}, {"color", {117, 120, 123}}}}));
+}
+
 TEST_CASE("Temperatures are set on the printer itself, without a print job", "[AnycubicCloud]")
 {
     const auto bed = temperature_order("12", -1, 70);

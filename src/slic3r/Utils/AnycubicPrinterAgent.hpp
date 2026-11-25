@@ -7,7 +7,9 @@
 
 #include <atomic>
 #include <cstdint>
+#include <array>
 #include <functional>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -75,11 +77,22 @@ protected:
     void decorate_ams_unit(int ams_id, nlohmann::json& unit) const override;
 
 private:
+    // The filament preset chosen for an ACE slot on the device page. The cloud keeps only the slot's material and
+    // colour, so the preset is shown again for as long as the slot still holds that material and colour.
+    struct SlotChoice
+    {
+        std::string        material_type;
+        std::array<int, 3> rgb{0, 0, 0};
+        std::string        filament_id;
+    };
+
     // Finds the printer of the account the settings name; empty on failure, with `error` set
     std::string resolve_printer(AnycubicCloud::Client& client, AnycubicCloud::Printer& printer, std::string& error);
     static CloudState read_cloud_state(AnycubicCloud::Client& client, const std::string& printer_id);
     // The ACE slots as trays of `ace_count` units
-    static std::vector<AmsTrayData> ace_trays(const std::vector<AnycubicCloud::AceSlot>& slots, int& ace_count);
+    static std::vector<AmsTrayData> ace_trays(const std::vector<AnycubicCloud::AceSlot>& slots,
+                                              const std::map<int, SlotChoice>&           choices,
+                                              int&                                       ace_count);
     // status_payload() with the ACE, so the device page shows its spools without a filament sync
     nlohmann::json device_status(const AnycubicCloud::Printer& printer, const CloudState& state) const;
     void        run_connection(std::string dev_id, std::string token, uint64_t generation);
@@ -87,6 +100,10 @@ private:
     void        stop_connection_thread();
     // The cloud order a device page command stands for, or null when the cloud has none
     nlohmann::json order_for_command(const nlohmann::json& print) const;
+    // The order for a slot's filament setting, or null when the slot already holds that material and colour.
+    // Remembers the chosen preset either way.
+    nlohmann::json slot_setting_order(const nlohmann::json& print);
+    void           load_slot_choices();
     void           send_order_async(nlohmann::json order);
     void           send_orders_async(std::vector<nlohmann::json> orders);
 
@@ -96,6 +113,11 @@ private:
     int64_t                                 m_uploaded_file_id = -1;
     std::string                             m_job_id; // The running job's, empty when the printer is idle
     std::vector<AnycubicCloud::AceUnit>     m_ace_units;
+    std::vector<AnycubicCloud::AceSlot>     m_ace_slots;
+    std::map<int, SlotChoice>               m_slot_choices; // By slot index across units, as AceSlot::index
+    // The cloud does not report the nozzle, so the device page gets the connected printer preset's
+    std::string                             m_nozzle_diameter;
+    std::string                             m_nozzle_type;
     // The light as last switched from the device page: the cloud does not report it, only the printer does, over MQTT
     bool                                    m_light_on = false;
     WasCancelledFn                          m_upload_cancelled; // The print job's, kept for the print order
