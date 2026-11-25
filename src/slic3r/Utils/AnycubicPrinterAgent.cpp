@@ -259,10 +259,12 @@ void AnycubicPrinterAgent::decorate_ams_unit(int ams_id, nlohmann::json& unit) c
             return;
         ace = m_ace_units[ams_id];
     }
-    // "info" holds the unit type in bits 0-3 (3, a unit with a dryer) and the dryer state in bits 4-7 (2 while drying)
-    constexpr int with_dryer = 3, off = 0, drying = 2;
-    char          info[8];
-    std::snprintf(info, sizeof(info), "%X", with_dryer | ((ace.drying == 1 ? drying : off) << 4));
+    // "info" holds the unit type in bits 0-3 (3, a unit with a dryer), the dryer state in bits 4-7 (2 while drying)
+    // and its stage in bits 22-23. The cloud reports no stage, but the drying dialog shows "Idle" without one, so a
+    // drying ACE is reported as heating.
+    constexpr int with_dryer = 3, drying = 2 << 4, heating = 1 << 22;
+    char          info[12];
+    std::snprintf(info, sizeof(info), "%X", with_dryer | (ace.drying == 1 ? drying | heating : 0));
     unit["info"] = info;
     if (ace.humidity >= 0)
         unit["humidity_raw"] = std::to_string(ace.humidity);
