@@ -69,6 +69,13 @@ public:
     static bool is_optional_printer_model_id(const std::string& model_id) { return model_id.empty(); }
     static std::string get_printer_type(const std::string& type_str) { return get_value_from_config<std::string>(type_str, "printer_type"); }
     static std::string get_printer_display_name(const std::string& type_str) { return get_value_from_config<std::string>(type_str, "display_name"); }
+    // The printer_model that selects the printer's presets. Printers connected through a printer agent have no device
+    // config, and their printer_type is already the preset's printer_model.
+    static std::string get_printer_model_name(const std::string& type_str)
+    {
+        std::string name = get_printer_display_name(type_str);
+        return name.empty() ? type_str : name;
+    }
     static std::string get_printer_series_str(std::string type_str) { return get_value_from_config<std::string>(type_str, "printer_series"); }
     static PrinterArch get_printer_arch(std::string type_str);
 

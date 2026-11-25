@@ -6,6 +6,8 @@
 #include "bambu_networking.hpp"
 
 #include <atomic>
+#include <chrono>
+#include <condition_variable>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -89,6 +91,18 @@ private:
     nlohmann::json order_for_command(const nlohmann::json& print) const;
     void           send_order_async(nlohmann::json order);
     void           send_orders_async(std::vector<nlohmann::json> orders);
+
+    // Orders reach the printer one at a time and in the order the device page gave them, a second apart: the printer
+    // drops an order that arrives while it handles the previous one. Sender threads outlive a call, so they share it.
+    struct OrderQueue
+    {
+        std::mutex                            mutex;
+        std::condition_variable               turn_changed;
+        uint64_t                              next_ticket = 0; // Handed to the next call
+        uint64_t                              serving     = 0; // The ticket whose orders go out now
+        std::chrono::steady_clock::time_point last_sent{};     // Only the serving thread touches it
+    };
+    std::shared_ptr<OrderQueue> m_order_queue = std::make_shared<OrderQueue>();
 
     mutable std::mutex                      m_cloud_mutex; // Guards everything below
     std::shared_ptr<AnycubicCloud::Client>  m_client;

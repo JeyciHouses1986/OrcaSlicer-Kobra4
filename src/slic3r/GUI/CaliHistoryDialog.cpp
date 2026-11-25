@@ -747,7 +747,7 @@ wxArrayString NewCalibrationHistoryDialog::get_all_filaments(const MachineObject
     if (preset_bundle) {
         BOOST_LOG_TRIVIAL(trace) << "system_preset_bundle filament number=" << preset_bundle->filaments.size();
         for (Preset *filament_it : preset_bundle->get_filament_presets_for_machine(
-                 DevPrinterConfigUtil::get_printer_display_name(obj->printer_type), nozzle_diameter_str, obj->is_support_user_preset)) {
+                 DevPrinterConfigUtil::get_printer_model_name(obj->printer_type), nozzle_diameter_str, obj->is_support_user_preset)) {
             if (!filament_id_set.insert(filament_it->filament_id).second)
                 continue;
             const std::string alias = preset_bundle->filaments.get_preset_alias(*filament_it, true);

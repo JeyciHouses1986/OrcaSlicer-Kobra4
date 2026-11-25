@@ -234,19 +234,36 @@ void AnycubicPrinterAgent::send_orders_async(std::vector<nlohmann::json> orders)
     if (!client)
         return;
     // The device page's command must not wait for the cloud; the next poll shows the result.
-    // Orders go one after another: the printer drops an order that arrives while it handles the previous one.
-    std::thread([client, orders = std::move(orders)]() {
-        for (size_t i = 0; i < orders.size(); ++i) {
-            if (i > 0)
-                std::this_thread::sleep_for(std::chrono::seconds(1));
-            const nlohmann::json& order = orders[i];
-            nlohmann::json        answer;
-            std::string           error;
-            if (client->send_order(order, answer, error))
-                BOOST_LOG_TRIVIAL(info) << "AnycubicPrinterAgent: order " << order.dump() << " answered " << answer.dump();
-            else
-                BOOST_LOG_TRIVIAL(warning) << "AnycubicPrinterAgent: order " << order.dump() << " was refused: " << error;
+    auto queue = m_order_queue;
+    uint64_t ticket;
+    {
+        std::lock_guard<std::mutex> lock(queue->mutex);
+        ticket = queue->next_ticket++;
+    }
+    std::thread([client, queue, ticket, orders = std::move(orders)]() {
+        {
+            std::unique_lock<std::mutex> lock(queue->mutex);
+            queue->turn_changed.wait(lock, [&] { return queue->serving == ticket; });
         }
+        for (const nlohmann::json& order : orders) {
+            std::this_thread::sleep_until(queue->last_sent + std::chrono::seconds(1));
+            nlohmann::json answer;
+            std::string    error;
+            try {
+                if (client->send_order(order, answer, error))
+                    BOOST_LOG_TRIVIAL(info) << "AnycubicPrinterAgent: order " << order.dump() << " answered " << answer.dump();
+                else
+                    BOOST_LOG_TRIVIAL(warning) << "AnycubicPrinterAgent: order " << order.dump() << " was refused: " << error;
+            } catch (const std::exception& e) {
+                BOOST_LOG_TRIVIAL(warning) << "AnycubicPrinterAgent: order " << order.dump() << " failed: " << e.what();
+            }
+            queue->last_sent = std::chrono::steady_clock::now();
+        }
+        {
+            std::lock_guard<std::mutex> lock(queue->mutex);
+            ++queue->serving;
+        }
+        queue->turn_changed.notify_all();
     }).detach();
 }
 
