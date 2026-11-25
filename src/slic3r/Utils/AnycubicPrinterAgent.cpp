@@ -5,7 +5,9 @@
 #include "MoonrakerPrinterAgent.hpp"
 #include "NetworkAgentFactory.hpp"
 #include "bambu_networking.hpp"
+#include "libslic3r/AppConfig.hpp"
 #include "libslic3r/PresetBundle.hpp"
+#include "libslic3r/PrintConfig.hpp"
 #include "libslic3r/format.hpp"
 #include "libslic3r/Utils.hpp"
 #include "slic3r/GUI/DeviceCore/DevManager.h"
@@ -19,14 +21,17 @@
 #include <boost/filesystem/path.hpp>
 #include <boost/nowide/fstream.hpp>
 
+#include <boost/algorithm/string/predicate.hpp>
 #include <boost/log/trivial.hpp>
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <functional>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -162,12 +167,16 @@ int AnycubicPrinterAgent::send_message(std::string dev_id, std::string json_str,
     if (json.is_object() && (json.contains("info") || json.contains("system")))
         return MoonrakerPrinterAgent::send_message(dev_id, json_str, qos, flag);
     if (json.is_object() && json.contains("print") && json["print"].is_object()) {
+        const bool     slot_setting = json["print"].value("command", std::string()) == "ams_filament_setting";
         nlohmann::json order;
         try {
-            order = order_for_command(json["print"]);
+            order = slot_setting ? slot_setting_order(json["print"]) : order_for_command(json["print"]);
         } catch (const nlohmann::json::exception& e) {
             BOOST_LOG_TRIVIAL(warning) << "AnycubicPrinterAgent: unexpected device page command: " << e.what();
         }
+        // A slot that already holds the chosen material and colour needs no order
+        if (order.is_null() && slot_setting)
+            return BAMBU_NETWORK_SUCCESS;
         // The device page says so rather than doing nothing
         if (order.is_null()) {
             BOOST_LOG_TRIVIAL(info) << "AnycubicPrinterAgent: no cloud order for device page command "
@@ -217,6 +226,62 @@ nlohmann::json AnycubicPrinterAgent::order_for_command(const nlohmann::json& pri
     if (command == "stop")
         return AnycubicCloud::job_order(printer_id, job_id, JobOrder::stop);
     return nullptr;
+}
+
+nlohmann::json AnycubicPrinterAgent::slot_setting_order(const nlohmann::json& print)
+{
+    const int  ams_id  = print.value("ams_id", 0);
+    const int  slot_id = print.value("slot_id", 0);
+    const int  index   = ams_id * 4 + slot_id;
+    SlotChoice choice{print.value("tray_type", std::string()), AnycubicCloud::rgb_from_hex(print.value("tray_color", std::string())),
+                      print.value("tray_info_idx", std::string())};
+    if (choice.material_type.empty() || ams_id < 0 || slot_id < 0 || slot_id > 3)
+        return nullptr;
+
+    std::string                           printer_id;
+    std::optional<AnycubicCloud::AceSlot> current;
+    {
+        std::lock_guard<std::mutex> lock(m_cloud_mutex);
+        printer_id = m_printer_id;
+        for (const AnycubicCloud::AceSlot& slot : m_ace_slots)
+            if (slot.index == index)
+                current = slot;
+        // The printer's own name for a variant is kept, such as "PLA Glow" for a PLA preset
+        if (current && current->loaded && boost::istarts_with(current->material_type, choice.material_type))
+            choice.material_type = current->material_type;
+        m_slot_choices[index] = choice;
+    }
+    const std::string saved = nlohmann::json{{"type", choice.material_type}, {"color", choice.rgb}, {"filament_id", choice.filament_id}}.dump();
+    run_on_main([index, saved]() {
+        if (AppConfig* config = GUI::wxGetApp().app_config)
+            config->set("anycubic_ace_slots", "slot" + std::to_string(index), saved);
+    });
+
+    if (printer_id.empty() || (current && current->loaded && current->material_type == choice.material_type && current->rgb == choice.rgb))
+        return nullptr;
+    return AnycubicCloud::ace_slot_order(printer_id, ams_id, slot_id, choice.material_type, choice.rgb);
+}
+
+void AnycubicPrinterAgent::load_slot_choices()
+{
+    const AppConfig* config = GUI::wxGetApp().app_config;
+    if (!config || !config->has_section("anycubic_ace_slots"))
+        return;
+    std::map<int, SlotChoice> choices;
+    for (const auto& [key, value] : config->get_section("anycubic_ace_slots")) {
+        const auto saved = nlohmann::json::parse(value, nullptr, false);
+        if (key.rfind("slot", 0) != 0 || !saved.is_object())
+            continue;
+        SlotChoice choice;
+        choice.material_type = saved.value("type", std::string());
+        choice.filament_id   = saved.value("filament_id", std::string());
+        if (saved.contains("color") && saved["color"].is_array() && saved["color"].size() == 3)
+            for (size_t i = 0; i < 3; ++i)
+                choice.rgb[i] = saved["color"][i].is_number_integer() ? saved["color"][i].get<int>() : 0;
+        choices[std::atoi(key.c_str() + 4)] = std::move(choice);
+    }
+    std::lock_guard<std::mutex> lock(m_cloud_mutex);
+    m_slot_choices = std::move(choices);
 }
 
 void AnycubicPrinterAgent::send_order_async(nlohmann::json order)
@@ -287,9 +352,19 @@ int AnycubicPrinterAgent::connect_printer(const PrinterConnectionParams& params)
     }
 
     // The preset holds the current token; the device record may still hold the one it was created with
-    std::string token;
-    if (const PresetBundle* bundle = GUI::wxGetApp().preset_bundle)
-        token = bundle->printers.get_edited_preset().config.opt_string("printhost_apikey");
+    std::string token, nozzle_diameter, nozzle_type;
+    if (const PresetBundle* bundle = GUI::wxGetApp().preset_bundle) {
+        const DynamicPrintConfig& config = bundle->printers.get_edited_preset().config;
+        token = config.opt_string("printhost_apikey");
+        if (const auto* diameters = config.option<ConfigOptionFloats>("nozzle_diameter"); diameters && !diameters->values.empty()) {
+            char text[16];
+            std::snprintf(text, sizeof(text), "%.1f", diameters->values.front());
+            nozzle_diameter = text;
+        }
+        if (const auto* types = config.option<ConfigOptionEnumsGenericNullable>("nozzle_type"); types && !types->values.empty())
+            if (const auto name = NozzleTypeEumnToStr.find(NozzleType(types->values.front())); name != NozzleTypeEumnToStr.end())
+                nozzle_type = name->second;
+    }
     if (token.empty())
         token = params.password;
 
@@ -301,7 +376,10 @@ int AnycubicPrinterAgent::connect_printer(const PrinterConnectionParams& params)
         std::lock_guard<std::mutex> lock(m_cloud_mutex);
         m_client.reset();
         m_printer_id.clear();
+        m_nozzle_diameter = nozzle_diameter;
+        m_nozzle_type     = nozzle_type;
     }
+    load_slot_choices();
 
     const uint64_t generation = ++m_generation;
     m_thread = std::thread([this, dev_id = params.dev_id, token, generation]() { run_connection(dev_id, token, generation); });
@@ -369,6 +447,7 @@ AnycubicPrinterAgent::CloudState AnycubicPrinterAgent::read_cloud_state(Anycubic
 }
 
 std::vector<MoonrakerPrinterAgent::AmsTrayData> AnycubicPrinterAgent::ace_trays(const std::vector<AnycubicCloud::AceSlot>& slots,
+                                                                                const std::map<int, SlotChoice>&           choices,
                                                                                 int&                                       ace_count)
 {
     std::vector<AmsTrayData> trays;
@@ -380,7 +459,10 @@ std::vector<MoonrakerPrinterAgent::AmsTrayData> AnycubicPrinterAgent::ace_trays(
         if (slot.loaded) {
             tray.tray_type     = slot.material_type;
             tray.tray_color    = AnycubicCloud::hex_from_rgb(slot.rgb);
-            tray.tray_info_idx = map_filament_type_to_generic_id(slot.material_type);
+            const auto choice  = choices.find(slot.index);
+            const bool chosen  = choice != choices.end() && !choice->second.filament_id.empty() &&
+                                choice->second.material_type == slot.material_type && choice->second.rgb == slot.rgb;
+            tray.tray_info_idx = chosen ? choice->second.filament_id : map_filament_type_to_generic_id(slot.material_type);
         }
         max_index = std::max(max_index, slot.index);
         trays.push_back(std::move(tray));
@@ -391,16 +473,26 @@ std::vector<MoonrakerPrinterAgent::AmsTrayData> AnycubicPrinterAgent::ace_trays(
 
 nlohmann::json AnycubicPrinterAgent::device_status(const AnycubicCloud::Printer& printer, const CloudState& state) const
 {
-    nlohmann::json payload = status_payload(printer, state);
-    if (!state.ace_slots.empty()) {
-        int        ace_count = 0;
-        const auto trays     = ace_trays(state.ace_slots, ace_count);
-        payload["print"]["ams"] = ams_status_json(ace_count, ace_count * 4 - 1, trays);
-    }
-    bool light_on;
+    nlohmann::json            payload = status_payload(printer, state);
+    bool                      light_on;
+    std::map<int, SlotChoice> choices;
+    std::string               nozzle_diameter, nozzle_type;
     {
         std::lock_guard<std::mutex> lock(m_cloud_mutex);
-        light_on = m_light_on;
+        light_on        = m_light_on;
+        choices         = m_slot_choices;
+        nozzle_diameter = m_nozzle_diameter;
+        nozzle_type     = m_nozzle_type;
+    }
+    if (!state.ace_slots.empty()) {
+        int        ace_count = 0;
+        const auto trays     = ace_trays(state.ace_slots, choices, ace_count);
+        payload["print"]["ams"] = ams_status_json(ace_count, ace_count * 4 - 1, trays);
+    }
+    // With a nozzle the device page finds the printer preset, and with it the filament presets for the ACE slots
+    if (!nozzle_diameter.empty() && !nozzle_type.empty()) {
+        payload["print"]["nozzle_diameter"] = nozzle_diameter;
+        payload["print"]["nozzle_type"]     = nozzle_type;
     }
     payload["print"]["lights_report"] = nlohmann::json::array({{{"node", "chamber_light"}, {"mode", light_on ? "on" : "off"}}});
     return payload;
@@ -444,6 +536,7 @@ void AnycubicPrinterAgent::run_connection(std::string dev_id, std::string token,
         std::lock_guard<std::mutex> lock(m_cloud_mutex);
         m_job_id    = current.busy() && state.job ? state.job->id : std::string();
         m_ace_units = state.ace_units;
+        m_ace_slots = state.ace_slots;
     };
     CloudState state = read_cloud_state(*client, printer.id);
     remember(printer, state);
