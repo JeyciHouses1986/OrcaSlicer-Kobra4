@@ -1259,7 +1259,7 @@ void AMSDryCtrWin::update_normal_description(DevAms* dev_ams)
         }
         if (has_filament_inserted) {
             auto limit_temperature = preset.value().filament_dev_ams_drying_heat_distortion_temperature;
-            if (temp_val > limit_temperature) {
+            if (limit_temperature > 0 && temp_val > limit_temperature) {
                 warning_text += _L("The temperature shall not exceed the filament's heat distortion temperature") + "(" +
                     wxString::Format(wxT("%d"), static_cast<int>(limit_temperature)) + wxString::FromUTF8(u8"\u2103" /* °C */) + ")\n";
                 can_enable_button = false;
@@ -1576,7 +1576,8 @@ void AMSDryCtrWin::update_filament_guide_info(DevAms* dev_ams)
         }
         std::string icon_path = "dev_ams_dry_ctr_enable";
         int distortion_temp = static_cast<int>(preset.filament_dev_ams_drying_heat_distortion_temperature);
-        if (valid_temp && distortion_temp < input_temp) {
+        // 0 means the preset gives no heat distortion temperature (most non-Bambu presets), not a limit of 0 degrees
+        if (valid_temp && distortion_temp > 0 && distortion_temp < input_temp) {
             icon_path = "dev_ams_dry_ctr_disable";
             can_start = false;
         }

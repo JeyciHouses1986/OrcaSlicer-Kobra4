@@ -95,6 +95,8 @@ private:
     int64_t                                 m_uploaded_file_id = -1;
     std::string                             m_job_id; // The running job's, empty when the printer is idle
     std::vector<AnycubicCloud::AceUnit>     m_ace_units;
+    // The light as last switched from the device page: the cloud does not report it, only the printer does, over MQTT
+    bool                                    m_light_on = false;
     WasCancelledFn                          m_upload_cancelled; // The print job's, kept for the print order
 
     std::atomic<uint64_t> m_generation{0};

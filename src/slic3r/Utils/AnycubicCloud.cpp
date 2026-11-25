@@ -460,6 +460,11 @@ nlohmann::json axis_order(const std::string& printer_id, int axis, int move_type
     return printer_order(printer_id, 201, {{"axis", axis}, {"move_type", move_type}, {"distance", distance}});
 }
 
+nlohmann::json light_order(const std::string& printer_id, int type, bool on)
+{
+    return printer_order(printer_id, 1233, {{"type", type}, {"status", on ? 1 : 0}, {"brightness", on ? 100 : 0}});
+}
+
 nlohmann::json order_from_gcode(const std::string& printer_id, const std::string& gcode)
 {
     // The device page sends one command, or a jog wrapped in G91/G90, such as "G91 \nG1 X10.0 F3000\nG90 \n"

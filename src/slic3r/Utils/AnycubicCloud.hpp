@@ -130,6 +130,9 @@ nlohmann::json fan_order(const std::string& printer_id, const std::string& fan, 
 // Moves `axis` (1 X, 2 Y, 3 Z, 4 all) by `distance` mm (move_type 0 minus, 1 plus) or homes it (move_type 2)
 nlohmann::json axis_order(const std::string& printer_id, int axis, int move_type, int distance);
 
+// Turns light `type` on at full brightness or off. Printers differ in the type of their light (the Kobra S1's is 2).
+nlohmann::json light_order(const std::string& printer_id, int type, bool on);
+
 // The printer-level order a G-code line from the device page stands for (M104, M140, M106, M107, G28 or a jog),
 // or null when the cloud has none
 nlohmann::json order_from_gcode(const std::string& printer_id, const std::string& gcode);

@@ -11,7 +11,7 @@ This fork lets OrcaSlicer slice for the **Anycubic Kobra 4** with the **ACE 2 Pr
 - **The ACE header** that the Kobra 4 firmware reads from the G-code, so it knows which ACE slot feeds each filament.
 - **Cloud printing**: the print dialog uploads the G-code to your Anycubic account and starts it on the printer, with the filament-to-ACE-slot mapping you choose and an optional timelapse.
 - **Device page**: the printer's state, job progress, layers, remaining time and temperatures; the filament loaded in each ACE slot; and the printer's camera.
-- **Printer control**: bed and nozzle temperature, fan speed, axis moves and homing at any time; pause, resume and stop while a job runs.
+- **Printer control**: bed and nozzle temperature, fan speed, the light, axis moves and homing at any time; pause, resume and stop while a job runs.
 - **ACE 2 Pro dryer**: humidity is shown for each unit and drying can be started or stopped from the device page.
 
 ## Setting it up

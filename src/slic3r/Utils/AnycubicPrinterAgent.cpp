@@ -139,6 +139,22 @@ nlohmann::json AnycubicPrinterAgent::status_payload(const AnycubicCloud::Printer
 int AnycubicPrinterAgent::send_message(std::string dev_id, std::string json_str, int qos, int flag)
 {
     const auto json = nlohmann::json::parse(json_str, nullptr, false);
+    // The device page switches the light once per light node; the two nodes stand for the two light types printers use
+    if (json.is_object() && json.contains("system") && json["system"].is_object() &&
+        json["system"].value("command", std::string()) == "ledctrl") {
+        const std::string node = json["system"].value("led_node", std::string());
+        const bool        on   = json["system"].value("led_mode", std::string()) == "on";
+        std::string       printer_id;
+        {
+            std::lock_guard<std::mutex> lock(m_cloud_mutex);
+            printer_id  = m_printer_id;
+            m_light_on  = on;
+        }
+        if (printer_id.empty() || (node != "chamber_light" && node != "chamber_light2"))
+            return ORCA_NETWORK_ERR_CMD_NOT_SUPPORTED;
+        send_order_async(AnycubicCloud::light_order(printer_id, node == "chamber_light" ? 1 : 2, on));
+        return BAMBU_NETWORK_SUCCESS;
+    }
     // Version and access code are answered from what the agent already holds
     if (json.is_object() && (json.contains("info") || json.contains("system")))
         return MoonrakerPrinterAgent::send_message(dev_id, json_str, qos, flag);
@@ -362,6 +378,12 @@ nlohmann::json AnycubicPrinterAgent::device_status(const AnycubicCloud::Printer&
         const auto trays     = ace_trays(state.ace_slots, ace_count);
         payload["print"]["ams"] = ams_status_json(ace_count, ace_count * 4 - 1, trays);
     }
+    bool light_on;
+    {
+        std::lock_guard<std::mutex> lock(m_cloud_mutex);
+        light_on = m_light_on;
+    }
+    payload["print"]["lights_report"] = nlohmann::json::array({{{"node", "chamber_light"}, {"mode", light_on ? "on" : "off"}}});
     return payload;
 }
 
