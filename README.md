@@ -20,6 +20,8 @@ This fork lets OrcaSlicer slice for the **Anycubic Kobra 4** with the **ACE 2 Pr
 2. Open the physical printer dialog (the connection icon next to the printer), choose **Log in to Anycubic** and sign in with your Anycubic account. The sign-in token stays in OrcaSlicer's local settings on your computer.
 3. In **Host**, type the printer's name as it appears in your Anycubic account. With a single printer on the account, any text works.
 4. The **Device** tab then shows the printer, and **Print** sends jobs to it.
+<img width="958" height="566" alt="Captura de pantalla 2026-11-25 084915" src="https://github.com/user-attachments/assets/eda27c98-c6f7-4c78-a6ff-74c05b8eb4f5" />
+
 
 ## Limitations
 
