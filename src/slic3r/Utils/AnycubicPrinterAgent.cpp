@@ -569,10 +569,12 @@ bool AnycubicPrinterAgent::fetch_filament_info(std::string dev_id, FilamentSyncM
     (void) dev_id;
     std::shared_ptr<AnycubicCloud::Client> client;
     std::string                            printer_id;
+    std::map<int, SlotChoice>              choices;
     {
         std::lock_guard<std::mutex> lock(m_cloud_mutex);
         client     = m_client;
         printer_id = m_printer_id;
+        choices    = m_slot_choices;
     }
     if (!client || printer_id.empty())
         return false;
@@ -588,7 +590,7 @@ bool AnycubicPrinterAgent::fetch_filament_info(std::string dev_id, FilamentSyncM
         return false;
 
     int                            ace_count = 0;
-    const std::vector<AmsTrayData> trays     = ace_trays(slots, ace_count);
+    const std::vector<AmsTrayData> trays     = ace_trays(slots, choices, ace_count);
     build_ams_payload(ace_count, ace_count * 4 - 1, trays);
     return true;
 }
