@@ -33,7 +33,7 @@ This fork lets OrcaSlicer slice for the **Anycubic Kobra 4** with the **ACE 2 Pr
 
 ## Downloads
 
-Download the Windows installer or portable build from the [latest release](../../releases/latest). No GitHub account is needed.
+Download the Windows installer or portable build from the [Releases](../../releases) page. No GitHub account is needed.
 
 Builds of every change, including Linux, are produced by the [Build all](../../actions/workflows/build_all.yml) workflow and can be downloaded from the *Artifacts* of a successful run (a GitHub account is needed to download them).
 
